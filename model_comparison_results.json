@@ -1,0 +1,95 @@
+[
+  {
+    "pdf": "740-AB-VU200-201-LH032-25-0_2.pdf",
+    "claude": {
+      "line_no": "740-AB-VU200-201-LH032-25-0",
+      "rev": 2,
+      "length": 16.04,
+      "pid": "LV1-105639.VU200",
+      "pipe_class": "Kujira",
+      "building": null,
+      "floor": null,
+      "dn": 25,
+      "insulation": null,
+      "project": "740-AB-VU200-201-LH032-25-0",
+      "ped_cat": null,
+      "_duration": 4.875186443328857
+    },
+    "gemini": {
+      "line_no": "740-AB-VU200-201-LH032-25-0",
+      "rev": 2,
+      "length": 16.5,
+      "pid": "LV1-105639.VU200",
+      "pipe_class": null,
+      "building": null,
+      "floor": "Level 6",
+      "dn": 25,
+      "insulation": null,
+      "project": "Kujira",
+      "ped_cat": null,
+      "_duration": 2.925757646560669
+    }
+  },
+  {
+    "pdf": "66110_DH_F02-PCWR-013-DN150-I16C00_R0.pdf",
+    "claude": {
+      "line_no": "LPP 6A - K007",
+      "rev": 0,
+      "length": 0.0,
+      "pid": null,
+      "pipe_class": null,
+      "building": "DC building",
+      "floor": null,
+      "dn": 0,
+      "insulation": null,
+      "project": "Mechanical & Piping",
+      "ped_cat": null,
+      "_duration": 4.069641590118408
+    },
+    "gemini": {
+      "line_no": "DH_F02-PCWR-013-DN150-116C00",
+      "rev": 0,
+      "length": 5.637,
+      "pid": null,
+      "pipe_class": "116C00",
+      "building": "DC building",
+      "floor": null,
+      "dn": 150,
+      "insulation": null,
+      "project": "LPP 6A-K007 - Mechanical & Piping",
+      "ped_cat": null,
+      "_duration": 3.5912530422210693
+    }
+  },
+  {
+    "pdf": "42562_CSL-7-201-017-25-SP1.pdf",
+    "claude": {
+      "line_no": "CSL-7-201-017-25-SP1",
+      "rev": 1,
+      "length": null,
+      "pid": null,
+      "pipe_class": "SP1",
+      "building": null,
+      "floor": "1",
+      "dn": 25,
+      "insulation": "H2",
+      "project": "SK SUT",
+      "ped_cat": null,
+      "_duration": 4.720564603805542
+    },
+    "gemini": {
+      "line_no": "CSL-7-201-017-25-SP1",
+      "rev": 2,
+      "length": 0.2,
+      "pid": "CH06822004-BD-P1-1179",
+      "pipe_class": "SP1",
+      "building": null,
+      "floor": "1",
+      "dn": 15,
+      "insulation": "H2",
+      "project": "5K SUT",
+      "ped_cat": null,
+      "_duration": 2.822901964187622
+    }
+  }
+]

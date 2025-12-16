@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modellvergleich: Claude vs. Gemini</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%);
+            color: #eee;
+            min-height: 100vh;
+            padding: 40px;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; }
+
+        h1 {
+            text-align: center;
+            font-size: 2.8em;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #00d4ff, #ff6b6b, #feca57);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle { text-align: center; color: #888; margin-bottom: 50px; font-size: 1.2em; }
+
+        /* Winner Banner */
+        .winner-banner {
+            background: linear-gradient(135deg, #00d4ff22, #7b2cbf22);
+            border: 2px solid #00d4ff;
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .winner-banner h2 {
+            font-size: 1.8em;
+            margin-bottom: 10px;
+        }
+
+        .winner-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #00d4ff, #7b2cbf);
+            padding: 10px 30px;
+            border-radius: 30px;
+            font-size: 1.3em;
+            font-weight: bold;
+            margin: 10px;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 30px;
+            margin-bottom: 50px;
+        }
+
+        .model-card {
+            background: rgba(255,255,255,0.03);
+            border-radius: 20px;
+            padding: 30px;
+            border: 2px solid rgba(255,255,255,0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .model-card.claude { border-color: #ff6b6b44; }
+        .model-card.gemini { border-color: #00d4ff44; }
+
+        .model-card h3 {
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .model-card.claude h3 { color: #ff6b6b; }
+        .model-card.gemini h3 { color: #00d4ff; }
+
+        .model-logo {
+            width: 50px;
+            height: 50px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5em;
+        }
+
+        .claude .model-logo { background: linear-gradient(135deg, #ff6b6b, #ee5a5a); }
+        .gemini .model-logo { background: linear-gradient(135deg, #00d4ff, #4285f4); }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 15px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .metric:last-child { border-bottom: none; }
+
+        .metric-label { color: #888; }
+        .metric-value { font-weight: bold; font-size: 1.2em; }
+
+        .metric-value.good { color: #00ff88; }
+        .metric-value.bad { color: #ff5252; }
+
+        /* Comparison Table */
+        .section {
+            background: rgba(255,255,255,0.03);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .section h2 {
+            font-size: 1.5em;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid rgba(0,212,255,0.3);
+        }
+
+        table { width: 100%; border-collapse: collapse; }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        th {
+            background: rgba(0,212,255,0.1);
+            color: #00d4ff;
+            font-weight: 600;
+        }
+
+        tr:hover { background: rgba(255,255,255,0.03); }
+
+        .winner-cell {
+            font-weight: bold;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.85em;
+        }
+
+        .winner-claude { background: #ff6b6b33; color: #ff6b6b; }
+        .winner-gemini { background: #00d4ff33; color: #00d4ff; }
+        .winner-both { background: #00ff8833; color: #00ff88; }
+        .winner-none { background: #ffffff11; color: #666; }
+
+        /* Progress bars */
+        .score-bar {
+            height: 40px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            margin: 15px 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .score-fill {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            padding-left: 20px;
+            font-weight: bold;
+            border-radius: 20px;
+        }
+
+        .score-fill.claude { background: linear-gradient(90deg, #ff6b6b, #ee5a5a); }
+        .score-fill.gemini { background: linear-gradient(90deg, #00d4ff, #4285f4); }
+
+        /* PDF Cards */
+        .pdf-card {
+            background: rgba(0,0,0,0.3);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .pdf-card h4 {
+            color: #feca57;
+            margin-bottom: 20px;
+            font-size: 1.1em;
+        }
+
+        .comparison-row {
+            display: grid;
+            grid-template-columns: 120px 1fr 1fr 100px;
+            gap: 15px;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            align-items: center;
+        }
+
+        .comparison-row:last-child { border-bottom: none; }
+
+        .field-name { color: #888; font-size: 0.9em; }
+
+        .value-box {
+            background: rgba(255,255,255,0.05);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Conclusion */
+        .conclusion {
+            background: linear-gradient(135deg, #00d4ff11, #7b2cbf11);
+            border: 1px solid #00d4ff44;
+            border-radius: 20px;
+            padding: 30px;
+            margin-top: 30px;
+        }
+
+        .conclusion h2 { border-bottom-color: #00d4ff; }
+
+        .pros-cons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 20px;
+        }
+
+        .pros, .cons {
+            padding: 20px;
+            border-radius: 15px;
+        }
+
+        .pros { background: rgba(0,255,136,0.1); border-left: 4px solid #00ff88; }
+        .cons { background: rgba(255,82,82,0.1); border-left: 4px solid #ff5252; }
+
+        .pros h4 { color: #00ff88; margin-bottom: 15px; }
+        .cons h4 { color: #ff5252; margin-bottom: 15px; }
+
+        ul { list-style: none; padding: 0; }
+        li { padding: 8px 0; display: flex; gap: 10px; align-items: center; }
+
+        .footer {
+            text-align: center;
+            margin-top: 50px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Modellvergleich: Claude vs. Gemini</h1>
+        <p class="subtitle">PDF-Datenextraktion aus Piping Isometric Zeichnungen</p>
+
+        <!-- Winner Banner -->
+        <div class="winner-banner">
+            <h2>🏆 Testsieger</h2>
+            <div class="winner-badge">Gemini 2.0 Flash</div>
+            <p style="margin-top: 15px; color: #aaa;">Höhere Genauigkeit & Schnellere Verarbeitung</p>
+        </div>
+
+        <!-- Model Comparison Cards -->
+        <div class="stats-grid">
+            <div class="model-card claude">
+                <h3><div class="model-logo">C</div> Claude Sonnet 4</h3>
+                <div class="metric">
+                    <span class="metric-label">Genauigkeit</span>
+                    <span class="metric-value bad">37.0%</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Korrekte Felder</span>
+                    <span class="metric-value">10 / 27</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Verarbeitungszeit</span>
+                    <span class="metric-value bad">13.67s</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Ø pro PDF</span>
+                    <span class="metric-value">4.56s</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Kosten (geschätzt)</span>
+                    <span class="metric-value">~$0.03 / PDF</span>
+                </div>
+            </div>
+
+            <div class="model-card gemini">
+                <h3><div class="model-logo">G</div> Gemini 2.0 Flash</h3>
+                <div class="metric">
+                    <span class="metric-label">Genauigkeit</span>
+                    <span class="metric-value good">51.9%</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Korrekte Felder</span>
+                    <span class="metric-value">14 / 27</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Verarbeitungszeit</span>
+                    <span class="metric-value good">9.34s</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Ø pro PDF</span>
+                    <span class="metric-value">3.11s</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Kosten (geschätzt)</span>
+                    <span class="metric-value">~$0.01 / PDF</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Score Comparison -->
+        <div class="section">
+            <h2>Genauigkeitsvergleich</h2>
+            <p style="margin-bottom: 20px; color: #888;">Prozent korrekt erkannter Felder (vs. Excel Ground Truth)</p>
+
+            <div style="margin-bottom: 15px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                    <span>Claude Sonnet 4</span>
+                    <span>37.0%</span>
+                </div>
+                <div class="score-bar">
+                    <div class="score-fill claude" style="width: 37%;">10/27</div>
+                </div>
+            </div>
+
+            <div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                    <span>Gemini 2.0 Flash</span>
+                    <span>51.9%</span>
+                </div>
+                <div class="score-bar">
+                    <div class="score-fill gemini" style="width: 51.9%;">14/27</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detail per PDF -->
+        <div class="section">
+            <h2>Detailvergleich pro PDF</h2>
+
+            <!-- PDF 1 -->
+            <div class="pdf-card">
+                <h4>📄 740-AB-VU200-201-LH032-25-0_2.pdf (Kujira)</h4>
+                <div class="comparison-row" style="font-weight: bold; color: #888;">
+                    <div>Feld</div>
+                    <div>Claude</div>
+                    <div>Gemini</div>
+                    <div>Gewinner</div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">Line No.</div>
+                    <div class="value-box">740-AB-VU200-201-LH032-25-0</div>
+                    <div class="value-box">740-AB-VU200-201-LH032-25-0</div>
+                    <div><span class="winner-cell winner-both">Beide ✓</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">Rev.</div>
+                    <div class="value-box">2</div>
+                    <div class="value-box">2</div>
+                    <div><span class="winner-cell winner-both">Beide ✓</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">PId</div>
+                    <div class="value-box">LV1-105639.VU200</div>
+                    <div class="value-box">LV1-105639.VU200</div>
+                    <div><span class="winner-cell winner-both">Beide ✓</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">Length</div>
+                    <div class="value-box">16.04</div>
+                    <div class="value-box">16.5</div>
+                    <div><span class="winner-cell winner-both">Beide ✓</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">Project</div>
+                    <div class="value-box" style="color: #ff5252;">740-AB-VU200... ✗</div>
+                    <div class="value-box" style="color: #00ff88;">Kujira ✓</div>
+                    <div><span class="winner-cell winner-gemini">Gemini</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">Floor</div>
+                    <div class="value-box">—</div>
+                    <div class="value-box">Level 6</div>
+                    <div><span class="winner-cell winner-gemini">Gemini</span></div>
+                </div>
+            </div>
+
+            <!-- PDF 2 -->
+            <div class="pdf-card">
+                <h4>📄 66110_DH_F02-PCWR-013-DN150-I16C00_R0.pdf (LPP6)</h4>
+                <div class="comparison-row" style="font-weight: bold; color: #888;">
+                    <div>Feld</div>
+                    <div>Claude</div>
+                    <div>Gemini</div>
+                    <div>Gewinner</div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">Line No.</div>
+                    <div class="value-box" style="color: #ff5252;">LPP 6A - K007 ✗</div>
+                    <div class="value-box" style="color: #feca57;">DH_F02-PCWR-013... ≈</div>
+                    <div><span class="winner-cell winner-gemini">Gemini</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">DN</div>
+                    <div class="value-box" style="color: #ff5252;">0 ✗</div>
+                    <div class="value-box" style="color: #00ff88;">150 ✓</div>
+                    <div><span class="winner-cell winner-gemini">Gemini</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">Length</div>
+                    <div class="value-box">0.0</div>
+                    <div class="value-box" style="color: #00ff88;">5.637 ✓</div>
+                    <div><span class="winner-cell winner-gemini">Gemini</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">Building</div>
+                    <div class="value-box">DC building</div>
+                    <div class="value-box">DC building</div>
+                    <div><span class="winner-cell winner-both">Beide ✓</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">Project</div>
+                    <div class="value-box">Mechanical & Piping</div>
+                    <div class="value-box" style="color: #00ff88;">LPP 6A-K007... ✓</div>
+                    <div><span class="winner-cell winner-gemini">Gemini</span></div>
+                </div>
+            </div>
+
+            <!-- PDF 3 -->
+            <div class="pdf-card">
+                <h4>📄 42562_CSL-7-201-017-25-SP1.pdf (5K)</h4>
+                <div class="comparison-row" style="font-weight: bold; color: #888;">
+                    <div>Feld</div>
+                    <div>Claude</div>
+                    <div>Gemini</div>
+                    <div>Gewinner</div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">Line No.</div>
+                    <div class="value-box">CSL-7-201-017-25-SP1</div>
+                    <div class="value-box">CSL-7-201-017-25-SP1</div>
+                    <div><span class="winner-cell winner-both">Beide ✓</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">Pipe class</div>
+                    <div class="value-box">SP1</div>
+                    <div class="value-box">SP1</div>
+                    <div><span class="winner-cell winner-both">Beide ✓</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">DN</div>
+                    <div class="value-box" style="color: #00ff88;">25 ✓</div>
+                    <div class="value-box" style="color: #ff5252;">15 ✗</div>
+                    <div><span class="winner-cell winner-claude">Claude</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">Project</div>
+                    <div class="value-box" style="color: #feca57;">SK SUT ≈</div>
+                    <div class="value-box" style="color: #00ff88;">5K SUT ✓</div>
+                    <div><span class="winner-cell winner-gemini">Gemini</span></div>
+                </div>
+                <div class="comparison-row">
+                    <div class="field-name">PId</div>
+                    <div class="value-box">—</div>
+                    <div class="value-box" style="color: #feca57;">CH06822004-BD-P1-1179 ≈</div>
+                    <div><span class="winner-cell winner-gemini">Gemini</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Conclusion -->
+        <div class="conclusion">
+            <h2>Fazit & Empfehlung</h2>
+
+            <div class="pros-cons">
+                <div class="pros">
+                    <h4>✓ Gemini Vorteile</h4>
+                    <ul>
+                        <li>📈 Höhere Genauigkeit (51.9% vs 37.0%)</li>
+                        <li>⚡ Schnellere Verarbeitung (3.1s vs 4.6s pro PDF)</li>
+                        <li>💰 Günstigere API-Kosten</li>
+                        <li>📋 Bessere Feld-Erkennung (Project, Floor, DN)</li>
+                        <li>🔤 Weniger OCR-Fehler</li>
+                    </ul>
+                </div>
+                <div class="cons">
+                    <h4>⚠ Zu beachten</h4>
+                    <ul>
+                        <li>🔧 Beide Modelle: Building "MC1" nicht im PDF</li>
+                        <li>📝 Kleine OCR-Fehler bei beiden (I vs 1)</li>
+                        <li>📊 Length-Werte variieren</li>
+                        <li>🔄 Prompt-Optimierung könnte beide verbessern</li>
+                        <li>📑 Mehr Test-PDFs empfohlen</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div style="margin-top: 30px; padding: 20px; background: rgba(0,212,255,0.1); border-radius: 15px;">
+                <h4 style="color: #00d4ff; margin-bottom: 10px;">💡 Empfehlung</h4>
+                <p>Für die PDF-Extraktion wird <strong>Gemini 2.0 Flash</strong> empfohlen aufgrund der höheren Genauigkeit, schnelleren Verarbeitung und niedrigeren Kosten. Das Tool sollte mit Gemini als Standard-Modell konfiguriert werden.</p>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Generiert am: <script>document.write(new Date().toLocaleDateString('de-DE') + ' ' + new Date().toLocaleTimeString('de-DE'))</script></p>
+            <p>PDF-Extraktion Modellvergleich | 3 Test-PDFs | Claude Sonnet 4 vs. Gemini 2.0 Flash</p>
+        </div>
+    </div>
+</body>
+</html>

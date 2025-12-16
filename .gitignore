@@ -1,0 +1,19 @@
+# API Keys und Secrets
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Test outputs
+test_extraction.xlsx
