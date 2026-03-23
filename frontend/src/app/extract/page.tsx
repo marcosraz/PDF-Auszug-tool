@@ -232,14 +232,14 @@ export default function ExtractPage() {
 
       {result && editedData && (
         <>
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0">
-            <div className="border rounded-xl overflow-hidden min-h-[500px]">
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0 overflow-hidden">
+            <div className="border rounded-xl overflow-auto min-h-0">
               <PdfViewer
                 imageUrl={result.image_url}
                 filename={result.filename}
               />
             </div>
-            <div className="min-h-[500px]">
+            <div className="min-h-0 overflow-auto">
               <ExtractionForm
                 data={editedData}
                 onChange={handleFieldChange}
@@ -253,38 +253,38 @@ export default function ExtractPage() {
                 downloading={downloadPending}
                 dirty={optimisticDirty}
               />
+
+              {/* Validation warnings */}
+              {result.validation && result.validation.length > 0 && (
+                <div className="space-y-1.5 mt-4">
+                  {result.validation.map((v, i) => (
+                    <div
+                      key={i}
+                      className={`text-xs px-3 py-1.5 rounded-md ${
+                        v.type === "error"
+                          ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                          : v.type === "warning"
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                          : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                      }`}
+                    >
+                      <span className="font-medium">{v.field}:</span> {v.message}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Duplicate warning */}
+              {result.duplicate && (
+                <div className="text-xs px-3 py-1.5 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 mt-2">
+                  <span className="font-medium">Duplikat erkannt:</span> Diese Line No. + Rev. existiert bereits in{" "}
+                  <span className="font-mono">{result.duplicate.existing_filename}</span>
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Validation warnings */}
-          {result.validation && result.validation.length > 0 && (
-            <div className="space-y-1.5">
-              {result.validation.map((v, i) => (
-                <div
-                  key={i}
-                  className={`text-xs px-3 py-1.5 rounded-md ${
-                    v.type === "error"
-                      ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-                      : v.type === "warning"
-                      ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
-                      : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
-                  }`}
-                >
-                  <span className="font-medium">{v.field}:</span> {v.message}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Duplicate warning */}
-          {result.duplicate && (
-            <div className="text-xs px-3 py-1.5 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
-              <span className="font-medium">Duplikat erkannt:</span> Diese Line No. + Rev. existiert bereits in{" "}
-              <span className="font-mono">{result.duplicate.existing_filename}</span>
-            </div>
-          )}
-
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 shrink-0">
             <Button
               variant="outline"
               onClick={() => {
