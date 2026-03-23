@@ -1,0 +1,14 @@
+{
+  "line_no": "CSL-7-201-017-25-SP1",
+  "rev": 2,
+  "length": 0.2,
+  "pid": "CH06822004-BD-PI-1179",
+  "pipe_class": "SP1",
+  "building": null,
+  "floor": null,
+  "dn": 25,
+  "insulation": "H2",
+  "project": "5K SUT",
+  "ped_cat": null,
+  "customer": "ThermoFisher"
+}

@@ -1,0 +1,31 @@
+{
+  "test_pdf": "42562_CSL-7-201-017-25-SP1.pdf",
+  "model": "gemini-3-flash-preview",
+  "examples_used": [
+    "example_kujira",
+    "example_lpp6"
+  ],
+  "without_fewshot": {
+    "line_no": "CSL-7-201-017-25-SP1",
+    "pipe_class": "SP1",
+    "floor": "1",
+    "building": null,
+    "length": 0.2,
+    "dn": 25,
+    "_duration": 7.906784772872925
+  },
+  "with_fewshot": {
+    "line_no": "CSL-7-201-017-25-SP1",
+    "rev": 2,
+    "length": 0.2,
+    "pid": "CH06822004-BD-PI-1179",
+    "pipe_class": "SP1",
+    "building": null,
+    "floor": "1",
+    "dn": 25,
+    "insulation": "H2",
+    "project": "5K SUT",
+    "ped_cat": null,
+    "_duration": 12.302005767822266
+  }
+}

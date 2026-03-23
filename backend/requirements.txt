@@ -1,0 +1,15 @@
+fastapi~=0.109.0
+uvicorn[standard]~=0.27.0
+python-multipart~=0.0.6
+openpyxl~=3.1.0
+Pillow~=10.0.0
+PyMuPDF~=1.23.0
+google-auth~=2.25.0
+requests~=2.31.0
+click~=8.0.0
+aiosqlite~=0.19.0
+python-jose[cryptography]~=3.3.0
+bcrypt~=4.0.0
+slowapi~=0.1.9
+tenacity~=8.2.0
+python-magic-bin~=0.4.14

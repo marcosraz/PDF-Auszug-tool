@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PDF Data Extractor - Extracts piping isometric data from PDFs to Excel
-Uses Claude Vision API for robust extraction from various PDF formats
+Supports Claude Vision and Gemini with Few-Shot Learning
 """
 
 import os
@@ -11,6 +11,7 @@ import base64
 import subprocess
 import tempfile
 import re
+import random
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
@@ -19,98 +20,260 @@ import click
 import requests
 from openpyxl import Workbook, load_workbook
 from PIL import Image
+import google.auth.transport.requests
+from google.oauth2 import service_account
+from tenacity import retry, wait_exponential_jitter, stop_after_attempt, retry_if_exception_type
 
 
-# Default columns for export - can be customized per project
-DEFAULT_COLUMNS = [
+# Paths
+SCRIPT_DIR = Path(__file__).parent
+EXAMPLES_DIR = SCRIPT_DIR / "examples"
+SERVICE_ACCOUNT_JSON = SCRIPT_DIR / "zg-visual-recognition-65464-f332a04f02a3.json"
+VERTEX_AI_PROJECT = "zg-visual-recognition-65464"
+VERTEX_AI_LOCATION = "global"
+DEFAULT_GEMINI_MODEL = "gemini-3.1-pro-preview"
+
+# Full 44-column template matching customer format
+EXCEL_COLUMNS = [
     "Id", "Line No.", "Rev.", "Latest Rev.", "Length", "Name", "PId",
-    "Pipe class", "Building", "Floor", "Insulation", "Transmittal No.",
-    "Date Rec.", "Ped Cat"
+    "Pipe class", "PRIOs", "HOLD", "Building", "Floor", "Insulation",
+    "Transmittal No.", "Date Rec.", "Spooling", "Iss. to prefab",
+    "Prefab remarks", "Prefab start", "Welded", "Latest location",
+    "Sent to site", "Work package", "Prefab compl.", "Install start",
+    "Install 50", "Install 90", "Install compl.", "Area", "Company",
+    "Site remarks", "As built", "Site checked", "Prefab Company",
+    "Ped Cat", "Ped Cat", "Rel. for Insulation", "Insulation Start",
+    "Insulation 50%", "Insulation 90%", "Insulated", "Insulated",
+    "Cladding", "Cladding"
 ]
 
-EXTRACTION_PROMPT = """Analysiere dieses Piping Isometric Zeichnungs-PDF. Der TITELBLOCK (Title Block) befindet sich UNTEN RECHTS und enthält alle wichtigen Informationen.
+EXTRACTION_PROMPT = """Du bist ein Experte für Piping Isometric Zeichnungen. Extrahiere NUR die SICHTBAREN Daten aus dem Titelblock.
 
-WICHTIG: Schau genau auf den Titelblock! Dort findest du:
-- Projekt/Kunde (z.B. "Lonza AG", "Kujira")
-- P&ID Nummer (z.B. "LV1-105639.VU200")
-- Zeichnungsnummer/Line No.
-- Level/Floor (z.B. "Level 6")
-- Revision
+WICHTIG - Lies genau vom Bild ab, erfinde NICHTS:
 
-Auch die MATERIALLISTE (oben rechts, "VORFERTIGUNGSMATERIAL") enthält wichtige Daten wie Rohrlängen.
+1. line_no: Die Isometric-Nummer / Zeichnungsnummer (z.B. "740-ABkont-VP131-102-LH099-20-0", "CSL-7-201-017-25-SP1")
+   - Steht meist unten rechts als "Isometric Number" oder große Beschriftung
 
-Extrahiere diese Felder:
+2. rev: Revisionsnummer (0, 1, 2) - aus Revisionsfeld oder Dateiname
 
-1. **line_no** - Zeichnungsnummer/Iso-Name aus dem Titelblock
-   Format: "740-AB-VU200-201-LH032-25-0" oder "DH_F02-PCWR-013-DN150-I16C00"
+3. length: Gesamtlänge in Metern - aus "CUT PIPE LENGTH" Tabelle oder Materialliste summieren
+   - Achte auf die Einheit (m oder mm)!
 
-2. **rev** - Revisionsnummer (Zahl aus Revisionsblock, z.B. 1, 2)
+4. pid: P&ID Nummer (z.B. "LV1-105638.VU311", "CH06822004-BD-PI-1179")
+   - Steht als "P&ID-No." oder "Tag/P&ID" im Titelblock
 
-3. **length** - Rohrlänge in Metern aus Materialliste (z.B. bei "Rohr...16.5M" → 16.5)
+5. pipe_class: NUR wenn ein Feld "Pipe class" oder "Pipe spec" SICHTBAR ist (z.B. "SP1", "SD", "LH099")
+   - NICHT aus der Line No. raten! Wenn nicht sichtbar: null
 
-4. **pid** - P&ID/TAG Nummer, beginnt oft mit "LV1-", "LV0-" oder "CH0..."
-   Beispiel: "LV1-105639.VU200"
+6. building: NUR wenn "Building" oder "Gebäude" SICHTBAR ist (z.B. "MC1", "DC building")
+   - ACHTUNG: "Lonza AG", "ThermoFisher" sind KUNDEN, nicht Buildings!
+   - Wenn nicht sichtbar: null
 
-5. **pipe_class** - Rohrklasse/Spezifikation (3-stellig oder Code wie "I16C00")
+7. floor: Etage/Level (z.B. "Level 5", "LVL 6", "F02")
+   - Steht oft als "Floor" oder in einem separaten Feld
 
-6. **building** - Gebäudecode (NICHT der Kundenname!)
-   Beispiele: "MC1", "MC2", "Datahall", "5K", "DC building"
-   WICHTIG: Suche nach Codes wie "MC1", "MC2" - NICHT "Lonza AG"
+8. dn: Nennweite in mm - aus Materialliste (DN-Spalte) oder aus Line No. (z.B. -25- = DN25)
 
-7. **floor** - Etage/Level (z.B. "Level 6", "LVL 6", "F02", "Riser")
+9. insulation: Isolierungstyp (z.B. "W60", "H2", "K51", "N/A")
+   - Steht als "Insulation" im Titelblock
 
-8. **dn** - Nennweite in mm (aus Line No. oder Material: DN25 → 25)
+10. project: Projektname (z.B. "Kujira", "5K SUT", "LPP 6A")
 
-9. **insulation** - Isolierung (z.B. "W60", "H2", "FoamInside") falls vorhanden
+11. ped_cat: PED Kategorie - NUR wenn sichtbar (z.B. "SEP")
 
-10. **project** - Projektname (z.B. "Kujira", "LPP 6A")
+12. customer: Kundenname (z.B. "Lonza AG", "ThermoFisher")
 
-11. **ped_cat** - PED Kategorie (meist "SEP")
-
-Antworte NUR mit JSON (keine Erklärungen):
-{"line_no": "...", "rev": 0, "length": 0.0, "pid": "...", "pipe_class": "...", "building": "...", "floor": "...", "dn": 0, "insulation": null, "project": "...", "ped_cat": null}
+Antworte NUR mit JSON. Für JEDES Feld gib einen Confidence-Score (0.0-1.0) an, der angibt wie sicher du dir bist:
+{"line_no": {"value": "...", "confidence": 0.95}, "rev": {"value": 0, "confidence": 0.9}, "length": {"value": 0.0, "confidence": 0.7}, "pid": {"value": "...", "confidence": 0.85}, "pipe_class": {"value": null, "confidence": 0.8}, "building": {"value": null, "confidence": 0.9}, "floor": {"value": "...", "confidence": 0.8}, "dn": {"value": 0, "confidence": 0.85}, "insulation": {"value": null, "confidence": 0.8}, "project": {"value": "...", "confidence": 0.9}, "ped_cat": {"value": null, "confidence": 0.8}, "customer": {"value": "...", "confidence": 0.9}}
 """
 
 
+def load_examples(project: str = None) -> list[dict]:
+    """Load few-shot examples from examples directory.
+
+    Args:
+        project: Optional project name filter (kept for backward compat, but
+                 filtering is now handled by select_examples()).
+    """
+    examples = []
+
+    if not EXAMPLES_DIR.exists():
+        return examples
+
+    for json_file in sorted(EXAMPLES_DIR.glob("*.json")):
+        image_file = json_file.with_suffix(".png")
+        if not image_file.exists():
+            continue
+
+        with open(image_file, "rb") as f:
+            image_b64 = base64.standard_b64encode(f.read()).decode('utf-8')
+
+        with open(json_file) as f:
+            correct_output = json.load(f)
+
+        examples.append({
+            "name": json_file.stem,
+            "image_b64": image_b64,
+            "output": correct_output
+        })
+
+    return examples
+
+
+def select_examples(all_examples: list[dict], project: str = None,
+                    max_examples: int = 5) -> list[dict]:
+    """Smart few-shot example selection prioritizing project-specific examples.
+
+    Args:
+        all_examples: All loaded examples.
+        project: Optional project name to prioritize matching examples.
+        max_examples: Maximum number of examples to return (default 5).
+
+    Returns:
+        Selected subset of examples, prioritizing same-project examples
+        while keeping at least 1 from a different project for diversity.
+    """
+    if not all_examples:
+        return []
+
+    if len(all_examples) <= max_examples:
+        return all_examples
+
+    if not project:
+        # No project hint - return random selection
+        return random.sample(all_examples, min(max_examples, len(all_examples)))
+
+    project_lower = project.lower()
+
+    # Split into same-project and other-project examples
+    same_project = []
+    other_project = []
+    for ex in all_examples:
+        ex_project = (ex.get("output", {}).get("project") or "").lower()
+        ex_name = ex.get("name", "").lower()
+        if project_lower in ex_project or project_lower in ex_name:
+            same_project.append(ex)
+        else:
+            other_project.append(ex)
+
+    # If no project-specific examples, fall back to random selection
+    if not same_project:
+        return random.sample(all_examples, min(max_examples, len(all_examples)))
+
+    selected = []
+
+    # Reserve at least 1 slot for diversity (different project)
+    diversity_count = min(1, len(other_project))
+    same_slots = max_examples - diversity_count
+
+    # Add same-project examples (up to same_slots)
+    if len(same_project) <= same_slots:
+        selected.extend(same_project)
+    else:
+        selected.extend(random.sample(same_project, same_slots))
+
+    # Fill remaining slots with other-project examples for diversity
+    remaining = max_examples - len(selected)
+    if remaining > 0 and other_project:
+        selected.extend(random.sample(other_project, min(remaining, len(other_project))))
+
+    return selected
+
+
 def pdf_to_image(pdf_path: Path, output_dir: Path, dpi: int = 150) -> list[Path]:
-    """Convert PDF pages to PNG images using pdftoppm"""
-    output_prefix = output_dir / pdf_path.stem
+    """Convert PDF pages to PNG images using PyMuPDF"""
+    import fitz
 
-    cmd = [
-        "pdftoppm",
-        "-png",
-        "-r", str(dpi),
-        str(pdf_path),
-        str(output_prefix)
-    ]
+    doc = fitz.open(str(pdf_path))
+    images = []
+    zoom = dpi / 72
+    matrix = fitz.Matrix(zoom, zoom)
 
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"pdftoppm failed: {result.stderr}")
+    for page_num in range(len(doc)):
+        page = doc[page_num]
+        pix = page.get_pixmap(matrix=matrix)
+        output_path = output_dir / f"{pdf_path.stem}-{page_num + 1:02d}.png"
+        pix.save(str(output_path))
+        images.append(output_path)
 
-    # Find generated images
-    images = sorted(output_dir.glob(f"{pdf_path.stem}*.png"))
+    doc.close()
     return images
 
 
 def image_to_base64(image_path: Path, max_size: int = 1568) -> str:
     """Convert image to base64, resizing if necessary for API limits"""
     with Image.open(image_path) as img:
-        # Resize if too large (Claude has limits)
         if max(img.size) > max_size:
             ratio = max_size / max(img.size)
             new_size = (int(img.size[0] * ratio), int(img.size[1] * ratio))
             img = img.resize(new_size, Image.Resampling.LANCZOS)
 
-        # Convert to RGB if necessary
         if img.mode in ('RGBA', 'P'):
             img = img.convert('RGB')
 
-        # Save to bytes
         import io
         buffer = io.BytesIO()
         img.save(buffer, format='PNG')
         return base64.standard_b64encode(buffer.getvalue()).decode('utf-8')
+
+
+def parse_json_response(text: str) -> dict:
+    """Parse JSON from various response formats"""
+    # Remove markdown code blocks
+    if "```json" in text:
+        match = re.search(r'```json\s*([\s\S]*?)```', text)
+        if match:
+            text = match.group(1).strip()
+    elif "```" in text:
+        match = re.search(r'```\s*([\s\S]*?)```', text)
+        if match:
+            text = match.group(1).strip()
+
+    # Try parsing cleaned text
+    try:
+        return json.loads(text)
+    except:
+        pass
+
+    # Fallback: find JSON object (supports nested braces for confidence format)
+    # First try nested match, then flat
+    match = re.search(r'\{(?:[^{}]|\{[^{}]*\})*\}', text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except:
+            pass
+
+    return {}
+
+
+def parse_extraction_with_confidence(text: str) -> tuple[dict, dict]:
+    """Parse JSON response that may contain confidence scores.
+
+    Returns (data, confidence) where:
+    - data: dict of field -> value (backward compatible)
+    - confidence: dict of field -> float (0.0-1.0)
+
+    Handles both new format {"field": {"value": ..., "confidence": 0.9}}
+    and old format {"field": value} gracefully.
+    """
+    raw = parse_json_response(text)
+    if not raw:
+        return {}, {}
+
+    data = {}
+    confidence = {}
+
+    for key, val in raw.items():
+        if isinstance(val, dict) and "value" in val:
+            # New format with confidence
+            data[key] = val["value"]
+            confidence[key] = float(val.get("confidence", 0.0))
+        else:
+            # Old format without confidence - fall back gracefully
+            data[key] = val
+
+    return data, confidence
 
 
 def extract_with_claude(image_base64: str, api_key: str) -> dict:
@@ -126,25 +289,13 @@ def extract_with_claude(image_base64: str, api_key: str) -> dict:
     payload = {
         "model": "claude-sonnet-4-20250514",
         "max_tokens": 1024,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": image_base64
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": EXTRACTION_PROMPT
-                    }
-                ]
-            }
-        ]
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image_base64}},
+                {"type": "text", "text": EXTRACTION_PROMPT}
+            ]
+        }]
     }
 
     response = requests.post(url, headers=headers, json=payload, timeout=60)
@@ -155,96 +306,215 @@ def extract_with_claude(image_base64: str, api_key: str) -> dict:
     result = response.json()
     text_content = result["content"][0]["text"]
 
-    # Parse JSON from response
-    # Try to find JSON in the response
-    json_match = re.search(r'\{[^{}]*\}', text_content, re.DOTALL)
-    if json_match:
-        try:
-            return json.loads(json_match.group())
-        except json.JSONDecodeError:
-            pass
-
-    # Try parsing the whole response
-    try:
-        return json.loads(text_content)
-    except json.JSONDecodeError:
-        click.echo(f"Warning: Could not parse JSON response: {text_content[:200]}", err=True)
-        return {}
+    return parse_json_response(text_content)
 
 
-def try_text_extraction(pdf_path: Path) -> Optional[dict]:
-    """Try to extract data from PDF text first (faster, cheaper)"""
-    result = subprocess.run(
-        ["pdftotext", "-layout", str(pdf_path), "-"],
-        capture_output=True, text=True
+def get_vertex_ai_token(credentials_path: Path = None) -> str:
+    """Get access token from service account JSON for Vertex AI"""
+    creds_path = credentials_path or SERVICE_ACCOUNT_JSON
+    creds = service_account.Credentials.from_service_account_file(
+        str(creds_path),
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
     )
-
-    if result.returncode != 0 or len(result.stdout.strip()) < 100:
-        return None
-
-    text = result.stdout
-
-    # Try to extract common patterns
-    data = {}
-
-    # Line No patterns (various formats)
-    line_patterns = [
-        r'(\d{3}-[A-Z]+-[A-Z]+-[A-Z\d]+-\d+-[A-Z\d]+-\d+-\d+)',  # Kujira format
-        r'([A-Z]+_F\d+-[A-Z]+-\d+-DN\d+-[A-Z\d]+)',  # LPP format
-        r'(\d+-[A-Z]+-\d+-\d+-[A-Z\d]+)',  # Other formats
-    ]
-    for pattern in line_patterns:
-        match = re.search(pattern, text)
-        if match:
-            data['line_no'] = match.group(1)
-            break
-
-    # PId pattern
-    pid_match = re.search(r'(LV[01]-\d+\.[A-Z\d]+)', text)
-    if pid_match:
-        data['pid'] = pid_match.group(1)
-
-    # If we found key data, return it
-    if 'line_no' in data:
-        return data
-
-    return None
+    creds.refresh(google.auth.transport.requests.Request())
+    return creds.token
 
 
-def process_pdf(pdf_path: Path, api_key: str, use_vision: bool = True) -> dict:
-    """Process a single PDF and extract data"""
+def extract_with_gemini(image_base64: str, api_key: str = None, model: str = None,
+                        examples: list[dict] = None, credentials_path: Path = None,
+                        project: str = None) -> tuple[dict, dict]:
+    """Use Gemini Vision API via Vertex AI (service account) or API key fallback.
+
+    Returns (data, confidence) tuple. data contains field values,
+    confidence contains field -> float scores.
+    """
+
+    model = model or DEFAULT_GEMINI_MODEL
+
+    # Build contents with few-shot examples
+    contents = []
+
+    if examples:
+        for i, ex in enumerate(examples):
+            contents.append({
+                "role": "user",
+                "parts": [
+                    {"inline_data": {"mime_type": "image/png", "data": ex["image_b64"]}},
+                    {"text": f"Beispiel {i+1}: Extrahiere die Daten aus diesem Piping Isometric."}
+                ]
+            })
+            contents.append({
+                "role": "model",
+                "parts": [{"text": json.dumps(ex["output"], indent=2)}]
+            })
+
+    # Add actual image (system prompt is in systemInstruction for cacheability)
+    contents.append({
+        "role": "user",
+        "parts": [
+            {"inline_data": {"mime_type": "image/png", "data": image_base64}},
+            {"text": "Extrahiere jetzt die Daten aus diesem Piping Isometric:"}
+        ]
+    })
+
+    # Structured output schema for Gemini - each field has value + confidence
+    _field_schema = {
+        "type": "OBJECT",
+        "properties": {
+            "value": {"type": "STRING", "nullable": True},
+            "confidence": {"type": "NUMBER"},
+        },
+        "required": ["value", "confidence"],
+    }
+    _response_schema = {
+        "type": "OBJECT",
+        "properties": {
+            "line_no": _field_schema,
+            "rev": _field_schema,
+            "length": _field_schema,
+            "pid": _field_schema,
+            "pipe_class": _field_schema,
+            "building": _field_schema,
+            "floor": _field_schema,
+            "dn": _field_schema,
+            "insulation": _field_schema,
+            "project": _field_schema,
+            "ped_cat": _field_schema,
+            "customer": _field_schema,
+        },
+        "required": [
+            "line_no", "rev", "length", "pid", "pipe_class",
+            "building", "floor", "dn", "insulation", "project",
+            "ped_cat", "customer",
+        ],
+    }
+
+    payload = {
+        "contents": contents,
+        "systemInstruction": {
+            "parts": [{"text": EXTRACTION_PROMPT}]
+        },
+        "generationConfig": {
+            "temperature": 0.1,
+            "maxOutputTokens": 8192,
+            "responseMimeType": "application/json",
+            "responseSchema": _response_schema,
+        },
+    }
+
+    timeout = 120
+
+    # Prefer service account via Vertex AI
+    creds_path = credentials_path or SERVICE_ACCOUNT_JSON
+    if creds_path.exists():
+        token = get_vertex_ai_token(creds_path)
+        if VERTEX_AI_LOCATION == "global":
+            url = (
+                f"https://aiplatform.googleapis.com/v1/"
+                f"projects/{VERTEX_AI_PROJECT}/locations/{VERTEX_AI_LOCATION}/"
+                f"publishers/google/models/{model}:generateContent"
+            )
+        else:
+            url = (
+                f"https://{VERTEX_AI_LOCATION}-aiplatform.googleapis.com/v1/"
+                f"projects/{VERTEX_AI_PROJECT}/locations/{VERTEX_AI_LOCATION}/"
+                f"publishers/google/models/{model}:generateContent"
+            )
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
+    elif api_key:
+        # Fallback to API key
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+    else:
+        raise RuntimeError("No credentials found. Place service account JSON or set GEMINI_API_KEY.")
+
+    @retry(
+        wait=wait_exponential_jitter(initial=2, max=60, jitter=5),
+        stop=stop_after_attempt(4),
+        retry=retry_if_exception_type((requests.exceptions.Timeout, requests.exceptions.ConnectionError)),
+        reraise=True,
+    )
+    def _call_api():
+        resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        if resp.status_code == 429 or resp.status_code >= 500:
+            raise requests.exceptions.ConnectionError(
+                f"Retryable error: {resp.status_code} - {resp.text[:200]}"
+            )
+        return resp
+
+    try:
+        response = _call_api()
+    except requests.exceptions.Timeout:
+        raise RuntimeError(f"Timeout after {timeout}s and retries exhausted")
+    except requests.exceptions.ConnectionError as e:
+        raise RuntimeError(f"Gemini API unreachable after retries: {e}")
+
+    if response.status_code != 200:
+        raise RuntimeError(f"Gemini API error: {response.status_code} - {response.text[:200]}")
+
+    result = response.json()
+
+    try:
+        text = result["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError) as e:
+        raise RuntimeError(f"Response parse error: {e}")
+
+    return parse_extraction_with_confidence(text)
+
+
+def process_pdf(pdf_path: Path, api_key: str = None, provider: str = "gemini",
+                model: str = None, use_fewshot: bool = True,
+                project: str = None) -> tuple[dict, dict]:
+    """Process a single PDF and extract data.
+
+    Returns (data, confidence) tuple.
+    """
     click.echo(f"Processing: {pdf_path.name}")
 
-    # Try text extraction first
-    if not use_vision:
-        text_data = try_text_extraction(pdf_path)
-        if text_data:
-            click.echo(f"  -> Extracted via text parsing")
-            return text_data
+    # Load examples for few-shot with smart selection
+    if use_fewshot:
+        all_examples = load_examples()
+        examples = select_examples(all_examples, project=project)
+    else:
+        examples = []
+    if examples and use_fewshot:
+        click.echo(f"  Using {len(examples)} few-shot examples")
 
-    # Use Claude Vision
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
         images = pdf_to_image(pdf_path, tmpdir)
 
         if not images:
             click.echo(f"  -> No images generated", err=True)
-            return {}
+            return {}, {}
 
-        # Use first page (title block is usually there)
         image_b64 = image_to_base64(images[0])
 
         try:
-            data = extract_with_claude(image_b64, api_key)
-            click.echo(f"  -> Extracted via Claude Vision")
-            return data
+            if provider == "claude":
+                data = extract_with_claude(image_b64, api_key)
+                click.echo(f"  -> Extracted via Claude Vision")
+                return data, {}
+            else:
+                model = model or DEFAULT_GEMINI_MODEL
+                data, confidence = extract_with_gemini(
+                    image_b64, api_key=api_key, model=model,
+                    examples=examples, project=project
+                )
+                fewshot_info = " (few-shot)" if examples else ""
+                click.echo(f"  -> Extracted via {model}{fewshot_info}")
+
+            return data, confidence
         except Exception as e:
             click.echo(f"  -> Error: {e}", err=True)
-            return {}
+            return {}, {}
 
 
 def create_excel(data_list: list[dict], output_path: Path, template_path: Optional[Path] = None):
-    """Create Excel file from extracted data - matching the format of existing exports"""
+    """Create Excel file from extracted data using 44-column customer format"""
     if template_path and template_path.exists():
         wb = load_workbook(template_path)
         ws = wb.active
@@ -254,43 +524,44 @@ def create_excel(data_list: list[dict], output_path: Path, template_path: Option
         ws = wb.active
         ws.title = "Extracted Data"
 
-        # Header row - matching the format from existing Excel files
-        headers = [
-            "Id", "Line No.", "Rev.", "Latest Rev.", "Length", "Name", "PId",
-            "Pipe class", "DN", "Building", "Floor", "Insulation", "Project",
-            "Ped Cat", "Source File"
-        ]
-        for col, header in enumerate(headers, 1):
+        # Use full 44-column format
+        for col, header in enumerate(EXCEL_COLUMNS, 1):
             ws.cell(row=1, column=col, value=header)
 
-        # Make header bold
         from openpyxl.styles import Font
         for cell in ws[1]:
             cell.font = Font(bold=True)
 
         start_row = 2
 
-    # Data rows
     for row_idx, data in enumerate(data_list, start_row):
         line_no = data.get('line_no')
 
-        ws.cell(row=row_idx, column=1, value=row_idx - 1)  # Id (auto-increment)
+        # Column mapping to 44-column format:
+        # 1=Id, 2=Line No., 3=Rev., 4=Latest Rev., 5=Length, 6=Name, 7=PId
+        # 8=Pipe class, 9=PRIOs, 10=HOLD, 11=Building, 12=Floor, 13=Insulation
+        # 14=Transmittal No., 15=Date Rec., ... 35=Ped Cat, 36=Ped Cat, ...
+
+        ws.cell(row=row_idx, column=1, value=row_idx - 1)  # Id
         ws.cell(row=row_idx, column=2, value=line_no)  # Line No.
         ws.cell(row=row_idx, column=3, value=data.get('rev'))  # Rev.
-        ws.cell(row=row_idx, column=4, value=True)  # Latest Rev. (assuming latest)
+        ws.cell(row=row_idx, column=4, value='false')  # Latest Rev. - needs manual check
         ws.cell(row=row_idx, column=5, value=data.get('length'))  # Length
         ws.cell(row=row_idx, column=6, value=line_no)  # Name (same as Line No.)
         ws.cell(row=row_idx, column=7, value=data.get('pid'))  # PId
         ws.cell(row=row_idx, column=8, value=data.get('pipe_class'))  # Pipe class
-        ws.cell(row=row_idx, column=9, value=data.get('dn'))  # DN
-        ws.cell(row=row_idx, column=10, value=data.get('building'))  # Building
-        ws.cell(row=row_idx, column=11, value=data.get('floor'))  # Floor
-        ws.cell(row=row_idx, column=12, value=data.get('insulation'))  # Insulation
-        ws.cell(row=row_idx, column=13, value=data.get('project'))  # Project
-        ws.cell(row=row_idx, column=14, value=data.get('ped_cat'))  # Ped Cat
-        ws.cell(row=row_idx, column=15, value=data.get('_source_file'))  # Source File
+        # 9=PRIOs, 10=HOLD - leave empty
+        ws.cell(row=row_idx, column=11, value=data.get('building'))  # Building
+        ws.cell(row=row_idx, column=12, value=data.get('floor'))  # Floor
+        ws.cell(row=row_idx, column=13, value=data.get('insulation') or 'N/A')  # Insulation
+        # 14-28 = Workflow fields - leave empty
+        # 29=Area, 30=Company - leave empty (internal IDs)
+        # 31-34 = More workflow - leave empty
+        ws.cell(row=row_idx, column=35, value=data.get('ped_cat'))  # Ped Cat
+        ws.cell(row=row_idx, column=36, value=data.get('ped_cat'))  # Ped Cat (duplicate)
+        # 37-44 = Insulation workflow - leave empty
 
-    # Auto-adjust column widths
+    # Auto-adjust widths
     for column in ws.columns:
         max_length = 0
         column_letter = column[0].column_letter
@@ -300,34 +571,52 @@ def create_excel(data_list: list[dict], output_path: Path, template_path: Option
                     max_length = len(str(cell.value))
             except:
                 pass
-        adjusted_width = min(max_length + 2, 50)
-        ws.column_dimensions[column_letter].width = adjusted_width
+        ws.column_dimensions[column_letter].width = min(max_length + 2, 50)
 
     wb.save(output_path)
-    click.echo(f"\nExcel saved to: {output_path}")
+    try:
+        click.echo(f"\nExcel saved to: {output_path}")
+    except RuntimeError:
+        pass  # Suppress click.echo errors when called outside CLI context
 
 
 @click.group()
-@click.version_option(version="1.0.0")
+@click.version_option(version="2.0.0")
 def cli():
-    """PDF Data Extractor - Extract piping isometric data from PDFs to Excel"""
+    """PDF Data Extractor - Extract piping isometric data from PDFs to Excel
+
+    Now with Gemini 3 Flash + Few-Shot Learning for better accuracy!
+    """
     pass
 
 
 @cli.command()
 @click.argument('input_path', type=click.Path(exists=True))
 @click.option('--output', '-o', type=click.Path(), help='Output Excel file path')
-@click.option('--api-key', envvar='ANTHROPIC_API_KEY', help='Claude API key (or set ANTHROPIC_API_KEY)')
-@click.option('--vision/--no-vision', default=True, help='Use Claude Vision (default: yes)')
+@click.option('--provider', type=click.Choice(['gemini', 'claude']), default='gemini',
+              help='AI provider (default: gemini)')
+@click.option('--model', '-m', type=str, help=f'Model name (default: {DEFAULT_GEMINI_MODEL})')
+@click.option('--no-fewshot', is_flag=True, help='Disable few-shot learning')
 @click.option('--recursive', '-r', is_flag=True, help='Process subdirectories recursively')
-def extract(input_path: str, output: Optional[str], api_key: str, vision: bool, recursive: bool):
+def extract(input_path: str, output: Optional[str], provider: str, model: str,
+            no_fewshot: bool, recursive: bool):
     """Extract data from PDF(s) and create Excel file
 
     INPUT_PATH can be a single PDF file or a directory containing PDFs.
     """
-    if not api_key:
-        click.echo("Error: API key required. Set ANTHROPIC_API_KEY or use --api-key", err=True)
-        sys.exit(1)
+    # Get API key based on provider
+    if provider == "claude":
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            click.echo("Error: Set ANTHROPIC_API_KEY environment variable", err=True)
+            sys.exit(1)
+    else:
+        api_key = os.environ.get('GEMINI_API_KEY')
+        if not api_key and not SERVICE_ACCOUNT_JSON.exists():
+            click.echo("Error: Set GEMINI_API_KEY or place service account JSON", err=True)
+            sys.exit(1)
+        if SERVICE_ACCOUNT_JSON.exists():
+            click.echo(f"Using service account: {SERVICE_ACCOUNT_JSON.name}")
 
     input_path = Path(input_path)
 
@@ -348,13 +637,17 @@ def extract(input_path: str, output: Optional[str], api_key: str, vision: bool, 
         sys.exit(1)
 
     click.echo(f"Found {len(pdf_files)} PDF file(s)")
+    click.echo(f"Provider: {provider} | Few-Shot: {'OFF' if no_fewshot else 'ON'}")
 
     # Process each PDF
     all_data = []
     for pdf in pdf_files:
-        data = process_pdf(pdf, api_key, use_vision=vision)
+        data, confidence = process_pdf(pdf, api_key, provider=provider, model=model,
+                                       use_fewshot=not no_fewshot)
         if data:
             data['_source_file'] = pdf.name
+            if confidence:
+                data['_confidence'] = confidence
             all_data.append(data)
 
     # Create Excel
@@ -366,20 +659,34 @@ def extract(input_path: str, output: Optional[str], api_key: str, vision: bool, 
 
 @cli.command()
 @click.argument('pdf_path', type=click.Path(exists=True))
-@click.option('--api-key', envvar='ANTHROPIC_API_KEY', help='Claude API key')
-def test(pdf_path: str, api_key: str):
+@click.option('--provider', type=click.Choice(['gemini', 'claude']), default='gemini')
+@click.option('--model', '-m', type=str, default=None)
+@click.option('--no-fewshot', is_flag=True, help='Disable few-shot learning')
+def test(pdf_path: str, provider: str, model: str, no_fewshot: bool):
     """Test extraction on a single PDF and show results"""
-    if not api_key:
-        click.echo("Error: API key required", err=True)
-        sys.exit(1)
+    if provider == "claude":
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            click.echo("Error: Set ANTHROPIC_API_KEY", err=True)
+            sys.exit(1)
+    else:
+        api_key = os.environ.get('GEMINI_API_KEY')
+        if not api_key and not SERVICE_ACCOUNT_JSON.exists():
+            click.echo("Error: Set GEMINI_API_KEY or place service account JSON", err=True)
+            sys.exit(1)
+        if SERVICE_ACCOUNT_JSON.exists():
+            click.echo(f"Using service account: {SERVICE_ACCOUNT_JSON.name}")
 
     pdf_path = Path(pdf_path)
-    data = process_pdf(pdf_path, api_key, use_vision=True)
+    data, confidence = process_pdf(pdf_path, api_key, provider=provider, model=model,
+                                   use_fewshot=not no_fewshot)
 
     click.echo("\n--- Extracted Data ---")
     for key, value in data.items():
         if not key.startswith('_'):
-            click.echo(f"  {key}: {value}")
+            conf = confidence.get(key)
+            conf_str = f" (confidence: {conf:.0%})" if conf is not None else ""
+            click.echo(f"  {key}: {value}{conf_str}")
 
 
 @cli.command()
@@ -392,24 +699,47 @@ def analyze(input_dir: str):
     click.echo(f"\nDirectory: {input_dir}")
     click.echo(f"PDF files found: {len(pdf_files)}")
 
-    # Check for existing Excel files
     excel_files = list(input_dir.glob('**/*.xlsx'))
     click.echo(f"Excel files found: {len(excel_files)}")
+
+    # Check examples
+    examples = load_examples()
+    click.echo(f"Few-shot examples: {len(examples)}")
 
     if pdf_files:
         click.echo("\nPDF files:")
         for pdf in pdf_files[:10]:
-            # Quick text check
             result = subprocess.run(
                 ["pdftotext", str(pdf), "-"],
                 capture_output=True, text=True
             )
             text_len = len(result.stdout.strip())
-            text_status = "✓ text" if text_len > 100 else "⚠ image-based"
+            text_status = "text" if text_len > 100 else "image"
             click.echo(f"  {pdf.name} ({text_status})")
 
         if len(pdf_files) > 10:
             click.echo(f"  ... and {len(pdf_files) - 10} more")
+
+
+@cli.command()
+def examples():
+    """List available few-shot examples"""
+    exs = load_examples()
+
+    if not exs:
+        click.echo("No examples found in examples/ directory")
+        click.echo("\nTo add examples:")
+        click.echo("  1. pdftoppm -png -r 150 -singlefile your.pdf examples/example_name")
+        click.echo("  2. Create examples/example_name.json with correct values")
+        return
+
+    click.echo(f"Found {len(exs)} examples:\n")
+    for ex in exs:
+        click.echo(f"  {ex['name']}:")
+        for k, v in ex['output'].items():
+            if v is not None:
+                click.echo(f"    {k}: {v}")
+        click.echo()
 
 
 if __name__ == "__main__":

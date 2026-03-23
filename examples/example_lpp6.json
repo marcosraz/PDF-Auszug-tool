@@ -1,0 +1,14 @@
+{
+  "line_no": "DH_F02-PCWR-013-DN150-I16C00",
+  "rev": 0,
+  "length": 6.878,
+  "pid": null,
+  "pipe_class": "I16C00",
+  "building": "DC building",
+  "floor": "F02",
+  "dn": 150,
+  "insulation": null,
+  "project": "LPP 6A - K007",
+  "ped_cat": null,
+  "customer": "exyte"
+}

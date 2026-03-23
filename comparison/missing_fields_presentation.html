@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Extraktion - Fehlende Felder</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --success: #16a34a;
+            --warning: #ea580c;
+            --danger: #dc2626;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-700: #374151;
+            --gray-900: #111827;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--gray-50);
+            color: var(--gray-900);
+            line-height: 1.6;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            color: var(--gray-900);
+        }
+
+        .subtitle {
+            color: var(--gray-700);
+            font-size: 1.1rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .card h2 {
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .card h3 {
+            font-size: 1rem;
+            margin: 1rem 0 0.5rem;
+            color: var(--gray-700);
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .status-card {
+            padding: 1rem;
+            border-radius: 8px;
+            border-left: 4px solid;
+        }
+
+        .status-card.success {
+            background: #f0fdf4;
+            border-color: var(--success);
+        }
+
+        .status-card.warning {
+            background: #fff7ed;
+            border-color: var(--warning);
+        }
+
+        .status-card.danger {
+            background: #fef2f2;
+            border-color: var(--danger);
+        }
+
+        .status-card h3 {
+            margin: 0 0 0.5rem;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .status-card.success h3 { color: var(--success); }
+        .status-card.warning h3 { color: var(--warning); }
+        .status-card.danger h3 { color: var(--danger); }
+
+        .status-card ul {
+            list-style: none;
+            font-size: 0.95rem;
+        }
+
+        .status-card li {
+            padding: 0.25rem 0;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        th {
+            background: var(--gray-100);
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: var(--gray-50);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-success { background: #dcfce7; color: var(--success); }
+        .badge-warning { background: #ffedd5; color: var(--warning); }
+        .badge-danger { background: #fee2e2; color: var(--danger); }
+
+        .question-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 0.5rem 0;
+        }
+
+        .question-box strong {
+            color: var(--primary);
+        }
+
+        .example-comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .example-box {
+            background: var(--gray-100);
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .example-box.wrong {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+        }
+
+        .example-box.correct {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+        }
+
+        .example-box h4 {
+            font-size: 0.85rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .example-box.wrong h4 { color: var(--danger); }
+        .example-box.correct h4 { color: var(--success); }
+
+        code {
+            background: var(--gray-200);
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.85rem;
+        }
+
+        .highlight {
+            background: #fef08a;
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+        }
+
+        .files-section {
+            margin-top: 2rem;
+        }
+
+        .file-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            background: var(--gray-100);
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+
+        .file-icon {
+            font-size: 1.2rem;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--gray-200);
+            color: var(--gray-700);
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>PDF Extraktion - Analyse</h1>
+            <p class="subtitle">Kujira Projekt - Fehlende Felder und Datenquellen</p>
+        </header>
+
+        <!-- Status Overview -->
+        <div class="status-grid">
+            <div class="status-card success">
+                <h3>Extrahierbar vom PDF</h3>
+                <ul>
+                    <li>Line No.</li>
+                    <li>Rev.</li>
+                    <li>Length</li>
+                    <li>PId</li>
+                    <li>Floor</li>
+                    <li>DN</li>
+                    <li>Insulation</li>
+                    <li>Project</li>
+                    <li>Customer</li>
+                </ul>
+            </div>
+
+            <div class="status-card warning">
+                <h3>Mapping erforderlich</h3>
+                <ul>
+                    <li>Pipe class (362, 386)</li>
+                    <li>Building (MC1)</li>
+                    <li>Ped Cat</li>
+                </ul>
+            </div>
+
+            <div class="status-card danger">
+                <h3>Quelle unbekannt</h3>
+                <ul>
+                    <li>Area (796, 803)</li>
+                    <li>Company (149, 150)</li>
+                    <li>Transmittal No.</li>
+                    <li>Alle Workflow-Felder</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Extraction Improvement -->
+        <div class="card">
+            <h2>Verbesserung der Extraktion</h2>
+            <p>Nach der Optimierung werden die Felder jetzt korrekt interpretiert:</p>
+
+            <div class="example-comparison">
+                <div class="example-box wrong">
+                    <h4>Vorher (falsch)</h4>
+                    <table>
+                        <tr><td>Line No.</td><td><code>740-AB<span class="highlight">b</span>ont-VP131...</code></td></tr>
+                        <tr><td>Pipe class</td><td><code>LH099</code></td></tr>
+                        <tr><td>Building</td><td><code>Lonza AG</code></td></tr>
+                        <tr><td>Floor</td><td><code>Level 1</code></td></tr>
+                    </table>
+                </div>
+                <div class="example-box correct">
+                    <h4>Jetzt (korrekt)</h4>
+                    <table>
+                        <tr><td>Line No.</td><td><code>740-AB<span class="highlight">k</span>ont-VP131...</code></td></tr>
+                        <tr><td>Pipe class</td><td><code>(leer)</code></td></tr>
+                        <tr><td>Building</td><td><code>(leer)</code></td></tr>
+                        <tr><td>Floor</td><td><code>Level 5</code></td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Missing Fields Details -->
+        <div class="card">
+            <h2>Fehlende Felder - Details</h2>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Feld</th>
+                        <th>Beispielwert</th>
+                        <th>Status</th>
+                        <th>Notwendige Aktion</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Pipe class</strong></td>
+                        <td>362, 386</td>
+                        <td><span class="badge badge-warning">Mapping</span></td>
+                        <td>Zuordnung LH099 &rarr; 386 erforderlich</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Building</strong></td>
+                        <td>MC1</td>
+                        <td><span class="badge badge-warning">Mapping</span></td>
+                        <td>Zuordnung Project + Floor &rarr; Building</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Area</strong></td>
+                        <td>796, 803, 1042</td>
+                        <td><span class="badge badge-danger">Unbekannt</span></td>
+                        <td>Datenquelle klaren</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Company</strong></td>
+                        <td>149, 150</td>
+                        <td><span class="badge badge-danger">Unbekannt</span></td>
+                        <td>Datenquelle klaren</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Ped Cat</strong></td>
+                        <td>SEP</td>
+                        <td><span class="badge badge-warning">Regel</span></td>
+                        <td>Immer "SEP" oder regelbasiert?</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Transmittal No.</strong></td>
+                        <td>TR001, TR014_4</td>
+                        <td><span class="badge badge-danger">Workflow</span></td>
+                        <td>Manuelle Eingabe nach Erhalt</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Questions Section -->
+        <div class="card">
+            <h2>Fragen an den Kunden</h2>
+
+            <div class="question-box">
+                <strong>1. Pipe class Nummern (362, 386, etc.)</strong>
+                <p>Woher kommen diese numerischen IDs? Gibt es eine Mapping-Tabelle die den Code (LH099, LH130) einer Nummer zuordnet?</p>
+            </div>
+
+            <div class="question-box">
+                <strong>2. Building (MC1)</strong>
+                <p>Auf den Kujira-PDFs steht nur "Lonza AG" (Kunde). Woher kommt die Building-Information "MC1"?</p>
+            </div>
+
+            <div class="question-box">
+                <strong>3. Area und Company</strong>
+                <p>Was bedeuten diese Nummern (Area: 796, Company: 150)? Aus welchem System kommen sie?</p>
+            </div>
+
+            <div class="question-box">
+                <strong>4. Ped Cat</strong>
+                <p>Soll immer "SEP" eingetragen werden, oder gibt es Regeln basierend auf DN/Pipe class?</p>
+            </div>
+        </div>
+
+        <!-- Solutions -->
+        <div class="card">
+            <h2>Losungsvorschlage</h2>
+
+            <h3>Option A: Mapping-Tabellen</h3>
+            <p>CSV-Dateien mit Zuordnungen importieren:</p>
+            <ul style="margin: 0.5rem 0 1rem 1.5rem;">
+                <li><code>pipe_class_mapping.csv</code> - LH099 &rarr; 386, LH130 &rarr; 362</li>
+                <li><code>building_mapping.csv</code> - Project + Floor &rarr; Building</li>
+            </ul>
+
+            <h3>Option B: IDF-Dateien</h3>
+            <p>Die vorhandenen IDF-Dateien konnten zusatzliche Metadaten enthalten.</p>
+
+            <h3>Option C: Datenbank-Export</h3>
+            <p>Falls die Daten in einer Datenbank gespeichert sind, konnte ein Export integriert werden.</p>
+        </div>
+
+        <!-- Files in this folder -->
+        <div class="card files-section">
+            <h2>Dateien in diesem Ordner</h2>
+
+            <div class="file-list">
+                <div class="file-item">
+                    <span class="file-icon">📊</span>
+                    <span>Kujira_REFERENCE.xlsx</span>
+                </div>
+                <div class="file-item">
+                    <span class="file-icon">📊</span>
+                    <span>Kujira_EXTRACTED.xlsx</span>
+                </div>
+                <div class="file-item">
+                    <span class="file-icon">📄</span>
+                    <span>740-ABkont-VP131-..._1_CKD.pdf</span>
+                </div>
+                <div class="file-item">
+                    <span class="file-icon">📄</span>
+                    <span>740-ABkont-VP132-..._1_CKD.pdf</span>
+                </div>
+                <div class="file-item">
+                    <span class="file-icon">📄</span>
+                    <span>740-ABkont-VP133-..._1_CKD.pdf</span>
+                </div>
+                <div class="file-item">
+                    <span class="file-icon">📄</span>
+                    <span>740-AB-VU200-..._2.pdf</span>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>PDF-Auszug Tool - Kujira Projekt Analyse</p>
+            <p style="margin-top: 0.5rem; font-size: 0.8rem;">Erstellt mit Gemini 3 Flash + Few-Shot Learning</p>
+        </footer>
+    </div>
+</body>
+</html>

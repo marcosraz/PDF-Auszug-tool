@@ -6,16 +6,16 @@
       "rev": 2,
       "length": 16.04,
       "pid": "LV1-105639.VU200",
-      "pipe_class": "Kujira",
+      "pipe_class": "25",
       "building": null,
       "floor": null,
       "dn": 25,
       "insulation": null,
-      "project": "740-AB-VU200-201-LH032-25-0",
+      "project": "Kujira",
       "ped_cat": null,
-      "_duration": 4.875186443328857
+      "_duration": 4.288152694702148
     },
-    "gemini": {
+    "gemini-2.0-flash": {
       "line_no": "740-AB-VU200-201-LH032-25-0",
       "rev": 2,
       "length": 16.5,
@@ -27,26 +27,54 @@
       "insulation": null,
       "project": "Kujira",
       "ped_cat": null,
-      "_duration": 2.925757646560669
+      "_duration": 4.632104158401489
+    },
+    "gemini-3-flash-preview": {
+      "line_no": "740-AB-VU200-201-LH032-25-0",
+      "rev": 2,
+      "length": 16.5,
+      "pid": "LV1-105639.VU200",
+      "pipe_class": "VU200",
+      "building": null,
+      "floor": "Level 6",
+      "dn": 25,
+      "insulation": null,
+      "project": "Kujira",
+      "ped_cat": null,
+      "_duration": 13.289148807525635
+    },
+    "gemini-3-pro-preview": {
+      "line_no": "740-AB-VU200-201-LH032-25-0",
+      "rev": 2,
+      "length": 16.5,
+      "pid": "LV1-105639.VU200",
+      "pipe_class": "LH032",
+      "building": "740",
+      "floor": "Level 6",
+      "dn": 25,
+      "insulation": null,
+      "project": "Kujira",
+      "ped_cat": "0",
+      "_duration": 64.37112712860107
     }
   },
   {
     "pdf": "66110_DH_F02-PCWR-013-DN150-I16C00_R0.pdf",
     "claude": {
-      "line_no": "LPP 6A - K007",
+      "line_no": "LPP-6A-K007",
       "rev": 0,
-      "length": 0.0,
+      "length": null,
       "pid": null,
       "pipe_class": null,
       "building": "DC building",
       "floor": null,
-      "dn": 0,
+      "dn": null,
       "insulation": null,
-      "project": "Mechanical & Piping",
+      "project": "exyte",
       "ped_cat": null,
-      "_duration": 4.069641590118408
+      "_duration": 4.576840400695801
     },
-    "gemini": {
+    "gemini-2.0-flash": {
       "line_no": "DH_F02-PCWR-013-DN150-116C00",
       "rev": 0,
       "length": 5.637,
@@ -56,9 +84,37 @@
       "floor": null,
       "dn": 150,
       "insulation": null,
-      "project": "LPP 6A-K007 - Mechanical & Piping",
+      "project": "LPP 6A - K007 - Mechanical & Piping",
       "ped_cat": null,
-      "_duration": 3.5912530422210693
+      "_duration": 4.2988104820251465
+    },
+    "gemini-3-flash-preview": {
+      "line_no": "DH_F02-PCWR-013-DN150-I16C00",
+      "rev": 0,
+      "length": 6.878,
+      "pid": null,
+      "pipe_class": "I16C00",
+      "building": "DC building",
+      "floor": "F02",
+      "dn": 150,
+      "insulation": null,
+      "project": "LPP 6A - K007 - Mechanical & Piping",
+      "ped_cat": null,
+      "_duration": 9.971322774887085
+    },
+    "gemini-3-pro-preview": {
+      "line_no": "DH_F02-PCWR-013-DN150-I16C00",
+      "rev": 0,
+      "length": 6.878,
+      "pid": null,
+      "pipe_class": "I16C00",
+      "building": "DC building",
+      "floor": "F02",
+      "dn": 150,
+      "insulation": null,
+      "project": "LPP 6A - K007 - Mechanical & Piping",
+      "ped_cat": null,
+      "_duration": 60.0655620098114
     }
   },
   {
@@ -73,11 +129,11 @@
       "floor": "1",
       "dn": 25,
       "insulation": "H2",
-      "project": "SK SUT",
+      "project": "5K SUT",
       "ped_cat": null,
-      "_duration": 4.720564603805542
+      "_duration": 4.542212963104248
     },
-    "gemini": {
+    "gemini-2.0-flash": {
       "line_no": "CSL-7-201-017-25-SP1",
       "rev": 2,
       "length": 0.2,
@@ -89,7 +145,35 @@
       "insulation": "H2",
       "project": "5K SUT",
       "ped_cat": null,
-      "_duration": 2.822901964187622
+      "_duration": 3.384901762008667
+    },
+    "gemini-3-flash-preview": {
+      "line_no": "CSL-7-201-017-25-SP1",
+      "rev": 2,
+      "length": 0.2,
+      "pid": "CH06822004-BD-P1-1179",
+      "pipe_class": "SP1",
+      "building": null,
+      "floor": "1",
+      "dn": 15,
+      "insulation": "H2",
+      "project": "5K SUT",
+      "ped_cat": null,
+      "_duration": 8.78844165802002
+    },
+    "gemini-3-pro-preview": {
+      "line_no": "CSL-7-201-017-25-SP1",
+      "rev": 2,
+      "length": 0.2,
+      "pid": "CH06822004-BD-PI-1179",
+      "pipe_class": "SP1",
+      "building": null,
+      "floor": "1",
+      "dn": 15,
+      "insulation": "H2",
+      "project": "5K SUT",
+      "ped_cat": null,
+      "_duration": 71.56593036651611
     }
   }
 ]

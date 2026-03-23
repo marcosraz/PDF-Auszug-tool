@@ -94,11 +94,20 @@ def extract_with_claude(image_base64: str) -> dict:
     return {"_error": "JSON parse failed", "_raw": text[:200], "_duration": duration}
 
 
-def extract_with_gemini(image_base64: str) -> dict:
+def extract_with_gemini(image_base64: str, model: str = "gemini-2.0-flash") -> dict:
     """Extract using Gemini Vision API"""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
 
     headers = {"Content-Type": "application/json"}
+
+    # Gemini 3 models need MANY more tokens (heavy chain-of-thought)
+    if "3-pro" in model:
+        max_tokens = 16384  # Pro needs even more
+    elif "3-" in model:
+        max_tokens = 8192   # Flash thinking model
+    else:
+        max_tokens = 1024
+
     payload = {
         "contents": [{
             "parts": [
@@ -108,12 +117,19 @@ def extract_with_gemini(image_base64: str) -> dict:
         }],
         "generationConfig": {
             "temperature": 0.1,
-            "maxOutputTokens": 1024
+            "maxOutputTokens": max_tokens
         }
     }
 
+    # Longer timeout for thinking models (Gemini 3 Pro can take 2+ minutes)
+    timeout = 180 if "3-pro" in model else 120 if "3-" in model else 60
+
     start = time.time()
-    response = requests.post(url, headers=headers, json=payload, timeout=60)
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    except requests.exceptions.Timeout:
+        duration = time.time() - start
+        return {"_error": f"Timeout after {timeout}s", "_duration": duration}
     duration = time.time() - start
 
     if response.status_code != 200:
@@ -122,11 +138,41 @@ def extract_with_gemini(image_base64: str) -> dict:
     result = response.json()
 
     try:
+        # Standard response format
         text = result["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError) as e:
-        return {"_error": f"Response parse error: {e}", "_duration": duration}
+        # Try alternative response formats
+        try:
+            # Some models return text directly
+            text = result["candidates"][0]["text"]
+        except:
+            try:
+                # Or in output field
+                text = result["candidates"][0]["output"]
+            except:
+                return {"_error": f"Response parse error: {e}", "_raw": json.dumps(result)[:300], "_duration": duration}
 
-    # Parse JSON
+    # Parse JSON - handle various formats
+
+    # Remove markdown code blocks if present
+    if "```json" in text:
+        json_block = re.search(r'```json\s*([\s\S]*?)```', text)
+        if json_block:
+            text = json_block.group(1).strip()
+    elif "```" in text:
+        json_block = re.search(r'```\s*([\s\S]*?)```', text)
+        if json_block:
+            text = json_block.group(1).strip()
+
+    # Try parsing the cleaned text as JSON
+    try:
+        data = json.loads(text)
+        data["_duration"] = duration
+        return data
+    except:
+        pass
+
+    # Fallback: find any JSON object in text
     json_match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
     if json_match:
         try:
@@ -135,17 +181,28 @@ def extract_with_gemini(image_base64: str) -> dict:
             return data
         except:
             pass
-    return {"_error": "JSON parse failed", "_raw": text[:200], "_duration": duration}
+
+    return {"_error": "JSON parse failed", "_raw": text[:300], "_duration": duration}
 
 
-def compare_pdfs(pdf_files: list):
-    """Compare extraction results from both models"""
+GEMINI_MODELS = [
+    "gemini-2.0-flash",      # Aktuell verwendet (baseline)
+    "gemini-3-flash-preview", # Gemini 3 Flash (neu)
+    "gemini-3-pro-preview",   # Gemini 3 Pro (neu, beste Qualität)
+]
+
+
+def compare_pdfs(pdf_files: list, gemini_models: list = None):
+    """Compare extraction results from multiple models"""
+    if gemini_models is None:
+        gemini_models = GEMINI_MODELS
+
     results = []
 
     for pdf_path in pdf_files:
-        print(f"\n{'='*60}")
+        print(f"\n{'='*80}")
         print(f"PDF: {pdf_path.name}")
-        print(f"{'='*60}")
+        print(f"{'='*80}")
 
         # Convert to image
         print("Converting PDF to image...")
@@ -154,32 +211,47 @@ def compare_pdfs(pdf_files: list):
             print("  ERROR: Could not convert PDF")
             continue
 
+        pdf_result = {"pdf": pdf_path.name}
+
         # Claude extraction
-        print("Extracting with Claude...")
-        claude_result = extract_with_claude(image_b64)
-        print(f"  Duration: {claude_result.get('_duration', 0):.2f}s")
+        if ANTHROPIC_API_KEY:
+            print("Extracting with Claude Sonnet...")
+            claude_result = extract_with_claude(image_b64)
+            print(f"  Duration: {claude_result.get('_duration', 0):.2f}s")
+            pdf_result["claude"] = claude_result
 
-        # Gemini extraction
-        print("Extracting with Gemini...")
-        gemini_result = extract_with_gemini(image_b64)
-        print(f"  Duration: {gemini_result.get('_duration', 0):.2f}s")
+        # Gemini models extraction
+        for model in gemini_models:
+            print(f"Extracting with {model}...")
+            gemini_result = extract_with_gemini(image_b64, model=model)
+            duration = gemini_result.get('_duration', 0)
+            error = gemini_result.get('_error')
+            if error:
+                print(f"  ERROR: {error}")
+            else:
+                print(f"  Duration: {duration:.2f}s")
+            pdf_result[model] = gemini_result
 
-        results.append({
-            "pdf": pdf_path.name,
-            "claude": claude_result,
-            "gemini": gemini_result
-        })
+        results.append(pdf_result)
 
-        # Print comparison
-        print(f"\n{'Feld':<15} {'Claude':<35} {'Gemini':<35}")
-        print("-" * 85)
+        # Print comparison table
+        model_names = ["claude"] + gemini_models if ANTHROPIC_API_KEY else gemini_models
+        col_width = 25
+
+        header = f"{'Feld':<12}"
+        for m in model_names:
+            short_name = m.replace("gemini-", "").replace("-preview", "")[:col_width-2]
+            header += f" {short_name:<{col_width}}"
+        print(f"\n{header}")
+        print("-" * (12 + (col_width + 1) * len(model_names)))
 
         fields = ["line_no", "rev", "length", "pid", "pipe_class", "building", "floor", "dn", "project"]
         for field in fields:
-            c_val = str(claude_result.get(field, "—"))[:33]
-            g_val = str(gemini_result.get(field, "—"))[:33]
-            match = "✓" if c_val == g_val else "≠"
-            print(f"{field:<15} {c_val:<35} {g_val:<35} {match}")
+            row = f"{field:<12}"
+            for m in model_names:
+                val = str(pdf_result.get(m, {}).get(field, "—"))[:col_width-2]
+                row += f" {val:<{col_width}}"
+            print(row)
 
     return results
 
@@ -211,11 +283,11 @@ def main():
 
     pdf_files = [p for p in pdf_files if p.exists()]
 
-    print("\n" + "=" * 60)
-    print("MODELL-VERGLEICH: Claude Vision vs. Gemini Vision")
-    print("=" * 60)
+    print("\n" + "=" * 80)
+    print("MODELL-VERGLEICH: Claude vs. Gemini 2.0 Flash vs. Gemini 3 Flash vs. Gemini 3 Pro")
+    print("=" * 80)
 
-    results = compare_pdfs(pdf_files)
+    results = compare_pdfs(pdf_files, gemini_models=GEMINI_MODELS)
 
     # Save results
     with open("model_comparison_results.json", "w") as f:
