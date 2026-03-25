@@ -30,6 +30,15 @@ def normalize_extraction(data: dict) -> dict:
             # Collapse multiple spaces
             value = re.sub(r"\s+", " ", value)
 
+        # Numeric field cleanup: strip units like "mm", "m" from length/dn/rev
+        if key in ("length", "dn", "rev") and isinstance(value, str):
+            # Remove common unit suffixes and whitespace, e.g. "6275 mm" -> "6275"
+            cleaned = re.sub(r"\s*(mm|m|cm|kg|bar|°C)\s*$", "", value, flags=re.IGNORECASE).strip()
+            # Also handle comma as decimal separator: "6.275" or "6,275"
+            cleaned = cleaned.replace(",", ".")
+            if cleaned:
+                value = cleaned
+
         # Field-specific normalization
         if key == "building" and isinstance(value, str):
             value = value.upper()
