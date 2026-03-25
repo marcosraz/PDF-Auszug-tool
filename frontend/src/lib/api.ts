@@ -13,6 +13,7 @@ import type {
   FeedbackEntry,
   FeedbackCreate,
   UserEntry,
+  ProjectEntry,
 } from "./types";
 import { getAuthHeaders } from "./auth";
 
@@ -272,5 +273,58 @@ export async function deleteUser(username: string): Promise<void> {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || "Failed to delete user");
+  }
+}
+
+// Project management API functions
+
+export async function getProjects(): Promise<ProjectEntry[]> {
+  const res = await authFetch(`${API_BASE}/projects`);
+  if (!res.ok) throw new Error("Failed to load projects");
+  return res.json();
+}
+
+export async function createProject(
+  name: string,
+  orderNumber: string | null = null,
+  createFolder: boolean = false
+): Promise<ProjectEntry> {
+  const res = await authFetch(`${API_BASE}/projects`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      order_number: orderNumber || null,
+      create_folder: createFolder,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to create project");
+  }
+  return res.json();
+}
+
+export async function updateProject(
+  projectId: number,
+  data: { name?: string; order_number?: string | null }
+): Promise<ProjectEntry> {
+  const res = await authFetch(`${API_BASE}/projects/${projectId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to update project");
+  }
+  return res.json();
+}
+
+export async function deleteProject(projectId: number): Promise<void> {
+  const res = await authFetch(`${API_BASE}/projects/${projectId}`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to delete project");
   }
 }

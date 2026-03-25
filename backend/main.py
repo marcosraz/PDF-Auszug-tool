@@ -20,7 +20,7 @@ from starlette.responses import Response
 
 from backend.config import IMAGES_DIR, MAX_UPLOAD_SIZE
 from backend.auth import SECRET_KEY, ALGORITHM
-from backend.routers import extraction, examples, export, stats, analytics, feedback
+from backend.routers import extraction, examples, export, stats, analytics, feedback, projects
 from backend.routers import auth as auth_router
 from backend.services.job_manager import start_cleanup_task
 from backend.db import init_db, log_audit, cleanup_old_audit_logs, cleanup_old_cache, backup_database
@@ -232,6 +232,7 @@ app.include_router(export.router, prefix="/api")
 app.include_router(stats.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(feedback.router, prefix="/api")
+app.include_router(projects.router, prefix="/api")
 
 
 @app.get("/api/version")

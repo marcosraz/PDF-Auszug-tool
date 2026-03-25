@@ -90,10 +90,17 @@ class SaveExampleRequest(BaseModel):
     data: ExtractionResult
 
 
+class ProjectInfo(BaseModel):
+    name: str
+    order_number: str | None = None
+    display_name: str
+
+
 class StatsResponse(BaseModel):
     example_count: int
     total_extractions: int
     available_projects: list[str]
+    projects: list[ProjectInfo] = []
 
 
 # ---------------------------------------------------------------------------

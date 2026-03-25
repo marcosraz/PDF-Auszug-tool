@@ -62,10 +62,26 @@ export interface SaveExampleRequest {
   data: ExtractionResult;
 }
 
+export interface ProjectInfo {
+  name: string;
+  order_number: string | null;
+  display_name: string;
+}
+
 export interface StatsResponse {
   example_count: number;
   total_extractions: number;
   available_projects: string[];
+  projects: ProjectInfo[];
+}
+
+export interface ProjectEntry {
+  id: number;
+  name: string;
+  order_number: string | null;
+  display_name: string;
+  has_folder: boolean;
+  created_at: string | null;
 }
 
 export const FIELD_LABELS: Record<keyof ExtractionResult, string> = {

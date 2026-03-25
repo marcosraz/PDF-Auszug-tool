@@ -47,12 +47,31 @@ def _noop_echo(*args, **kwargs):
     logger.debug("pdf_extractor: %s", msg)
 
 
-def _detect_project_from_filename(filename: str) -> str | None:
+_cached_project_names: list[str] | None = None
+
+
+async def _load_project_names() -> list[str]:
+    """Load project names from DB (cached in-process)."""
+    global _cached_project_names
+    if _cached_project_names is None:
+        from backend.db import get_project_names
+        _cached_project_names = await get_project_names()
+    return _cached_project_names
+
+
+def invalidate_project_cache():
+    """Clear the cached project names so next call reloads from DB."""
+    global _cached_project_names
+    _cached_project_names = None
+
+
+def _detect_project_from_filename(filename: str, known_projects: list[str] | None = None) -> str | None:
     """Try to detect project name from PDF filename or parent directory."""
     name_lower = filename.lower()
-    known_projects = ["kujira", "5k", "boxmeer", "lpp5", "lpp6", "orca"]
+    if known_projects is None:
+        known_projects = ["kujira", "5k", "boxmeer", "lpp5", "lpp6", "orca", "bi-cip"]
     for proj in known_projects:
-        if proj in name_lower:
+        if proj.lower() in name_lower:
             return proj
     return None
 

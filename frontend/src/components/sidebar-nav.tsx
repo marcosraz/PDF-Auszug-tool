@@ -13,6 +13,7 @@ import {
   BookOpen,
   MessageSquarePlus,
   Shield,
+  FolderKanban,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -27,6 +28,7 @@ const baseNavItems = [
   { href: "/examples", label: "Beispiele", icon: GraduationCap },
   { href: "/analytics", label: "Analytik", icon: BarChart3 },
   { href: "/review", label: "Review-Queue", icon: ClipboardCheck },
+  { href: "/projects", label: "Projekte", icon: FolderKanban },
   { href: "/feedback", label: "Feedback", icon: MessageSquarePlus },
   { href: "/guide", label: "Anleitung", icon: BookOpen },
 ];

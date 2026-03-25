@@ -161,6 +161,17 @@ CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
 CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_project ON feedback(project);
 """,
+    # Version 3: projects table for project management with order numbers
+    3: """
+CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    order_number TEXT,
+    has_folder BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);
+""",
 }
 
 LATEST_SCHEMA_VERSION = max(_MIGRATIONS)
@@ -213,6 +224,10 @@ async def init_db():
         await _ensure_version_table(db)
         await _run_migrations(db)
     logger.info("Analytics database initialised at %s (schema v%d)", db_path, LATEST_SCHEMA_VERSION)
+
+    # Seed projects from existing folders on first run
+    await seed_projects_from_folders()
+    await _seed_known_order_numbers()
 
 
 async def log_extraction_full(
@@ -921,5 +936,165 @@ async def delete_feedback(feedback_id: int) -> bool:
         cursor = await db.execute("DELETE FROM feedback WHERE id = ?", (feedback_id,))
         await db.commit()
         return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+# ---------------------------------------------------------------------------
+# Project CRUD
+# ---------------------------------------------------------------------------
+
+
+async def seed_projects_from_folders():
+    """Scan PROJECT_ROOT for folders containing PDFs and seed them into the projects table.
+
+    Only inserts projects that don't already exist.
+    """
+    from backend.config import PROJECT_ROOT
+
+    # Directories to skip (not actual project folders)
+    skip = {
+        "__pycache__", "backend", "frontend", "examples", "comparison",
+        "logs", "scripts", "Reports", "node_modules", ".git",
+        "Kujira_Praesentation",
+    }
+
+    db = await _connect()
+    try:
+        for d in PROJECT_ROOT.iterdir():
+            if not d.is_dir() or d.name in skip:
+                continue
+            if not any(d.glob("*.pdf")):
+                continue
+            # Insert only if not already present
+            await db.execute(
+                """INSERT OR IGNORE INTO projects (name, has_folder)
+                   VALUES (?, TRUE)""",
+                (d.name,),
+            )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def _seed_known_order_numbers():
+    """Set order numbers for known projects if not already set.
+
+    Also ensures BI-CIP project exists with its order number.
+    """
+    known = {
+        "BI-CIP": "S254058",
+        "LPP6": "S254032",
+    }
+    db = await _connect()
+    try:
+        for name, order_num in known.items():
+            # Insert project if it doesn't exist
+            await db.execute(
+                "INSERT OR IGNORE INTO projects (name, order_number, has_folder) VALUES (?, ?, FALSE)",
+                (name, order_num),
+            )
+            # Update order number only if currently NULL
+            await db.execute(
+                "UPDATE projects SET order_number = ? WHERE name = ? AND order_number IS NULL",
+                (order_num, name),
+            )
+        await db.commit()
+    finally:
+        await db.close()
+
+
+async def get_projects() -> list[dict]:
+    """Return all projects ordered by name."""
+    db = await _connect()
+    try:
+        db.row_factory = aiosqlite.Row
+        rows = await db.execute_fetchall(
+            "SELECT id, name, order_number, has_folder, created_at FROM projects ORDER BY name"
+        )
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def get_project_by_name(name: str) -> dict | None:
+    """Return a single project by name."""
+    db = await _connect()
+    try:
+        db.row_factory = aiosqlite.Row
+        rows = await db.execute_fetchall(
+            "SELECT id, name, order_number, has_folder, created_at FROM projects WHERE name = ?",
+            (name,),
+        )
+        return dict(rows[0]) if rows else None
+    finally:
+        await db.close()
+
+
+async def create_project(name: str, order_number: str | None = None) -> dict:
+    """Create a new project. Returns the created project dict."""
+    db = await _connect()
+    try:
+        cursor = await db.execute(
+            "INSERT INTO projects (name, order_number, has_folder) VALUES (?, ?, FALSE)",
+            (name, order_number),
+        )
+        await db.commit()
+        project_id = cursor.lastrowid
+        db.row_factory = aiosqlite.Row
+        rows = await db.execute_fetchall(
+            "SELECT id, name, order_number, has_folder, created_at FROM projects WHERE id = ?",
+            (project_id,),
+        )
+        return dict(rows[0])
+    finally:
+        await db.close()
+
+
+_UNSET = object()
+
+
+async def update_project(project_id: int, name: str | None = None, order_number: str | None = _UNSET) -> bool:  # type: ignore[assignment]
+    """Update a project's name and/or order_number. Returns True if a row was updated."""
+    updates = []
+    params: list = []
+    if name is not None:
+        updates.append("name = ?")
+        params.append(name)
+    if order_number is not _UNSET:
+        updates.append("order_number = ?")
+        params.append(order_number)
+    if not updates:
+        return False
+    params.append(project_id)
+    db = await _connect()
+    try:
+        cursor = await db.execute(
+            f"UPDATE projects SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+async def delete_project(project_id: int) -> bool:
+    """Delete a project by ID."""
+    db = await _connect()
+    try:
+        cursor = await db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+async def get_project_names() -> list[str]:
+    """Return just the project names (for use in extractor fallback)."""
+    db = await _connect()
+    try:
+        rows = await db.execute_fetchall("SELECT name FROM projects ORDER BY name")
+        return [r[0] for r in rows]
     finally:
         await db.close()

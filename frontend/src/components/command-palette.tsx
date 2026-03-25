@@ -16,6 +16,7 @@ import {
   FileText,
   BarChart3,
   FolderOpen,
+  FolderKanban,
   BookOpen,
   ClipboardCheck,
   Moon,
@@ -81,6 +82,10 @@ export function CommandPalette() {
           <CommandItem onSelect={() => navigate("/analytics")}>
             <BarChart3 className="mr-2 h-4 w-4" />
             <span>Analytik</span>
+          </CommandItem>
+          <CommandItem onSelect={() => navigate("/projects")}>
+            <FolderKanban className="mr-2 h-4 w-4" />
+            <span>Projektverwaltung</span>
           </CommandItem>
           <CommandItem onSelect={() => navigate("/review")}>
             <ClipboardCheck className="mr-2 h-4 w-4" />

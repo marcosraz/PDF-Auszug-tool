@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { GraduationCap, FileSearch, Layers, FolderOpen } from "lucide-react";
+import { GraduationCap, FileSearch, Layers, FolderOpen, Settings } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { getStats } from "@/lib/api";
 import { StatsResponse } from "@/lib/types";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [stats, setStats] = useState<StatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -78,16 +80,26 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {stats?.available_projects && stats.available_projects.length > 0 && (
+      {stats?.projects && stats.projects.length > 0 && (
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">Verfügbare Projekte</CardTitle>
+            <button
+              onClick={() => router.push("/projects")}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+            >
+              <Settings className="h-3 w-3" />
+              Verwalten
+            </button>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {stats.available_projects.map((p) => (
-                <Badge key={p} variant="secondary">
-                  {p}
+              {stats.projects.map((p) => (
+                <Badge key={p.name} variant="secondary">
+                  {p.order_number && (
+                    <span className="font-mono text-xs mr-1 opacity-70">{p.order_number}</span>
+                  )}
+                  {p.name}
                 </Badge>
               ))}
             </div>
