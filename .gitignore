@@ -37,8 +37,9 @@ uploads/
 # Service account credentials
 zg-visual-recognition-*.json
 
-# Screenshots & Playwright artifacts
+# Screenshots & Playwright artifacts (but allow examples/*.png)
 *.png
+!examples/*.png
 .playwright-cli/
 
 # Archives
