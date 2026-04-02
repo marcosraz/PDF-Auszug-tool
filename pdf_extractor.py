@@ -322,7 +322,7 @@ def get_vertex_ai_token(credentials_path: Path = None) -> str:
 
 def extract_with_gemini(image_base64: str, api_key: str = None, model: str = None,
                         examples: list[dict] = None, credentials_path: Path = None,
-                        project: str = None) -> tuple[dict, dict]:
+                        project: str = None, extra_prompt: str = "") -> tuple[dict, dict]:
     """Use Gemini Vision API via Vertex AI (service account) or API key fallback.
 
     Returns (data, confidence) tuple. data contains field values,
@@ -389,10 +389,21 @@ def extract_with_gemini(image_base64: str, api_key: str = None, model: str = Non
         ],
     }
 
+    # If extra_prompt contains custom field definitions, add them to response schema
+    if extra_prompt:
+        import re
+        # Parse custom field keys from extra_prompt (format: "13. field_key: Label ...")
+        for match in re.finditer(r'\d+\.\s+(\w+):', extra_prompt):
+            cf_key = match.group(1)
+            if cf_key not in _response_schema["properties"]:
+                _response_schema["properties"][cf_key] = _field_schema
+
+    full_prompt = EXTRACTION_PROMPT + extra_prompt
+
     payload = {
         "contents": contents,
         "systemInstruction": {
-            "parts": [{"text": EXTRACTION_PROMPT}]
+            "parts": [{"text": full_prompt}]
         },
         "generationConfig": {
             "temperature": 0.1,
@@ -515,6 +526,22 @@ def process_pdf(pdf_path: Path, api_key: str = None, provider: str = "gemini",
 
 def create_excel(data_list: list[dict], output_path: Path, template_path: Optional[Path] = None):
     """Create Excel file from extracted data using 44-column customer format"""
+    # Collect all custom field keys used across results
+    custom_field_keys: list[str] = []
+    custom_field_labels: dict[str, str] = {}
+    seen_keys: set[str] = set()
+    for data in data_list:
+        cf = data.get("custom_fields", {})
+        if isinstance(cf, dict):
+            for key in cf:
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    custom_field_keys.append(key)
+                    # Use key as label (title-cased) by default
+                    custom_field_labels[key] = key.replace("_", " ").title()
+
+    base_col_count = len(EXCEL_COLUMNS)
+
     if template_path and template_path.exists():
         wb = load_workbook(template_path)
         ws = wb.active
@@ -524,8 +551,9 @@ def create_excel(data_list: list[dict], output_path: Path, template_path: Option
         ws = wb.active
         ws.title = "Extracted Data"
 
-        # Use full 44-column format
-        for col, header in enumerate(EXCEL_COLUMNS, 1):
+        # Use full 44-column format + custom fields
+        all_headers = EXCEL_COLUMNS + [custom_field_labels[k] for k in custom_field_keys]
+        for col, header in enumerate(all_headers, 1):
             ws.cell(row=1, column=col, value=header)
 
         from openpyxl.styles import Font
@@ -560,6 +588,12 @@ def create_excel(data_list: list[dict], output_path: Path, template_path: Option
         ws.cell(row=row_idx, column=35, value=data.get('ped_cat'))  # Ped Cat
         ws.cell(row=row_idx, column=36, value=data.get('ped_cat'))  # Ped Cat (duplicate)
         # 37-44 = Insulation workflow - leave empty
+
+        # Custom fields after standard columns
+        cf = data.get("custom_fields", {})
+        if isinstance(cf, dict):
+            for i, key in enumerate(custom_field_keys):
+                ws.cell(row=row_idx, column=base_col_count + 1 + i, value=cf.get(key))
 
     # Auto-adjust widths
     for column in ws.columns:

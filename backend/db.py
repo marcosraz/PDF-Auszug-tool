@@ -172,6 +172,27 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);
 """,
+    # Version 4: custom fields per project + example-to-project mapping
+    4: """
+CREATE TABLE IF NOT EXISTS project_custom_fields (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    field_key TEXT NOT NULL,
+    field_label TEXT NOT NULL,
+    field_type TEXT DEFAULT 'text',
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, field_key)
+);
+CREATE INDEX IF NOT EXISTS idx_pcf_project ON project_custom_fields(project_id);
+
+CREATE TABLE IF NOT EXISTS example_metadata (
+    name TEXT PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_em_project ON example_metadata(project_id);
+""",
 }
 
 LATEST_SCHEMA_VERSION = max(_MIGRATIONS)
@@ -1095,6 +1116,168 @@ async def get_project_names() -> list[str]:
     db = await _connect()
     try:
         rows = await db.execute_fetchall("SELECT name FROM projects ORDER BY name")
+        return [r[0] for r in rows]
+    finally:
+        await db.close()
+
+
+# ---------------------------------------------------------------------------
+# Project Custom Fields CRUD
+# ---------------------------------------------------------------------------
+
+
+async def get_custom_fields(project_id: int) -> list[dict]:
+    """Return all custom fields for a project, ordered by sort_order."""
+    db = await _connect()
+    try:
+        db.row_factory = aiosqlite.Row
+        rows = await db.execute_fetchall(
+            "SELECT id, field_key, field_label, field_type, sort_order FROM project_custom_fields WHERE project_id = ? ORDER BY sort_order, id",
+            (project_id,),
+        )
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def get_custom_fields_by_project_name(project_name: str) -> list[dict]:
+    """Return custom fields for a project looked up by name."""
+    db = await _connect()
+    try:
+        db.row_factory = aiosqlite.Row
+        rows = await db.execute_fetchall(
+            """SELECT pcf.id, pcf.field_key, pcf.field_label, pcf.field_type, pcf.sort_order
+               FROM project_custom_fields pcf
+               JOIN projects p ON p.id = pcf.project_id
+               WHERE p.name = ?
+               ORDER BY pcf.sort_order, pcf.id""",
+            (project_name,),
+        )
+        return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def add_custom_field(
+    project_id: int, field_key: str, field_label: str,
+    field_type: str = "text", sort_order: int = 0,
+) -> dict:
+    """Add a custom field to a project. Returns the created field."""
+    db = await _connect()
+    try:
+        cursor = await db.execute(
+            """INSERT INTO project_custom_fields (project_id, field_key, field_label, field_type, sort_order)
+               VALUES (?, ?, ?, ?, ?)""",
+            (project_id, field_key, field_label, field_type, sort_order),
+        )
+        await db.commit()
+        field_id = cursor.lastrowid
+        db.row_factory = aiosqlite.Row
+        rows = await db.execute_fetchall(
+            "SELECT id, field_key, field_label, field_type, sort_order FROM project_custom_fields WHERE id = ?",
+            (field_id,),
+        )
+        return dict(rows[0])
+    finally:
+        await db.close()
+
+
+async def update_custom_field(field_id: int, **kwargs) -> bool:
+    """Update a custom field. Valid kwargs: field_label, field_type, sort_order."""
+    allowed = {"field_label", "field_type", "sort_order"}
+    updates = []
+    params: list = []
+    for key, val in kwargs.items():
+        if key in allowed and val is not None:
+            updates.append(f"{key} = ?")
+            params.append(val)
+    if not updates:
+        return False
+    params.append(field_id)
+    db = await _connect()
+    try:
+        cursor = await db.execute(
+            f"UPDATE project_custom_fields SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+async def delete_custom_field(field_id: int) -> bool:
+    """Delete a custom field."""
+    db = await _connect()
+    try:
+        cursor = await db.execute(
+            "DELETE FROM project_custom_fields WHERE id = ?", (field_id,)
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+    finally:
+        await db.close()
+
+
+# ---------------------------------------------------------------------------
+# Example Metadata CRUD
+# ---------------------------------------------------------------------------
+
+
+async def set_example_project(name: str, project_name: str | None) -> bool:
+    """Assign an example to a project (or clear assignment with None)."""
+    db = await _connect()
+    try:
+        if project_name is None:
+            # Clear assignment
+            await db.execute(
+                "INSERT OR REPLACE INTO example_metadata (name, project_id) VALUES (?, NULL)",
+                (name,),
+            )
+        else:
+            # Look up project_id
+            rows = await db.execute_fetchall(
+                "SELECT id FROM projects WHERE name = ?", (project_name,)
+            )
+            if not rows:
+                return False
+            project_id = rows[0][0]
+            await db.execute(
+                "INSERT OR REPLACE INTO example_metadata (name, project_id) VALUES (?, ?)",
+                (name, project_id),
+            )
+        await db.commit()
+        return True
+    finally:
+        await db.close()
+
+
+async def get_example_metadata_all() -> dict[str, str | None]:
+    """Return a dict mapping example name -> project name (or None)."""
+    db = await _connect()
+    try:
+        db.row_factory = aiosqlite.Row
+        rows = await db.execute_fetchall(
+            """SELECT em.name, p.name AS project_name
+               FROM example_metadata em
+               LEFT JOIN projects p ON p.id = em.project_id"""
+        )
+        return {r["name"]: r["project_name"] for r in rows}
+    finally:
+        await db.close()
+
+
+async def get_examples_by_project_name(project_name: str) -> list[str]:
+    """Return example names assigned to a specific project."""
+    db = await _connect()
+    try:
+        rows = await db.execute_fetchall(
+            """SELECT em.name
+               FROM example_metadata em
+               JOIN projects p ON p.id = em.project_id
+               WHERE p.name = ?""",
+            (project_name,),
+        )
         return [r[0] for r in rows]
     finally:
         await db.close()

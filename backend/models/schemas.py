@@ -23,6 +23,7 @@ class ExtractionResult(BaseModel):
     project: str | None = None
     ped_cat: str | None = None
     customer: str | None = None
+    custom_fields: dict[str, str | int | float | None] = {}
 
 
 class ConfidenceScores(BaseModel):
@@ -39,6 +40,7 @@ class ConfidenceScores(BaseModel):
     project: float | None = None
     ped_cat: float | None = None
     customer: float | None = None
+    custom_fields: dict[str, float] = {}
 
 
 class ValidationIssue(BaseModel):
@@ -82,12 +84,39 @@ class ExampleInfo(BaseModel):
     name: str
     image_url: str
     data: ExtractionResult
+    project_name: str | None = None
 
 
 class SaveExampleRequest(BaseModel):
     name: str
     extraction_id: str
     data: ExtractionResult
+    project_name: str | None = None
+
+
+class AssignExampleProjectRequest(BaseModel):
+    project_name: str | None = None
+
+
+class CustomFieldInfo(BaseModel):
+    id: int
+    field_key: str
+    field_label: str
+    field_type: str = "text"
+    sort_order: int = 0
+
+
+class CustomFieldCreate(BaseModel):
+    field_key: str
+    field_label: str
+    field_type: str = "text"
+    sort_order: int = 0
+
+
+class CustomFieldUpdate(BaseModel):
+    field_label: str | None = None
+    field_type: str | None = None
+    sort_order: int | None = None
 
 
 class ProjectInfo(BaseModel):

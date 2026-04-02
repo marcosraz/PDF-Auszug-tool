@@ -31,14 +31,19 @@ import {
   FolderPlus,
   Save,
   X,
+  ChevronDown,
+  ChevronRight,
+  Columns3,
 } from "lucide-react";
 import {
   getProjects,
   createProject,
   updateProject,
   deleteProject,
+  addProjectCustomField,
+  deleteProjectCustomField,
 } from "@/lib/api";
-import type { ProjectEntry } from "@/lib/types";
+import type { ProjectEntry, CustomFieldInfo } from "@/lib/types";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
@@ -60,6 +65,13 @@ export default function ProjectsPage() {
   // Delete confirmation
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Custom fields
+  const [expandedProject, setExpandedProject] = useState<number | null>(null);
+  const [newFieldKey, setNewFieldKey] = useState("");
+  const [newFieldLabel, setNewFieldLabel] = useState("");
+  const [newFieldType, setNewFieldType] = useState("text");
+  const [addingField, setAddingField] = useState(false);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -141,6 +153,42 @@ export default function ProjectsPage() {
     }
   };
 
+  const handleAddField = async (projectId: number) => {
+    const key = newFieldKey.trim().toLowerCase().replace(/\s+/g, "_");
+    const label = newFieldLabel.trim();
+    if (!key || !label) {
+      toast.error("Schlüssel und Label sind Pflichtfelder");
+      return;
+    }
+    setAddingField(true);
+    try {
+      await addProjectCustomField(projectId, {
+        field_key: key,
+        field_label: label,
+        field_type: newFieldType,
+      });
+      toast.success(`Spalte "${label}" hinzugefügt`);
+      setNewFieldKey("");
+      setNewFieldLabel("");
+      setNewFieldType("text");
+      await loadProjects();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Fehler beim Hinzufügen");
+    } finally {
+      setAddingField(false);
+    }
+  };
+
+  const handleDeleteField = async (projectId: number, field: CustomFieldInfo) => {
+    try {
+      await deleteProjectCustomField(projectId, field.id);
+      toast.success(`Spalte "${field.field_label}" gelöscht`);
+      await loadProjects();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Fehler beim Löschen");
+    }
+  };
+
   const projectToDelete = projects.find((p) => p.id === deleteId);
 
   return (
@@ -172,124 +220,250 @@ export default function ProjectsPage() {
               Keine Projekte vorhanden. Erstelle ein neues Projekt.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Projektname</TableHead>
-                  <TableHead>Bestellnummer</TableHead>
-                  <TableHead>Anzeigename</TableHead>
-                  <TableHead>Ordner</TableHead>
-                  <TableHead className="w-[120px]">Aktionen</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {projects.map((p) => (
-                  <TableRow key={p.id}>
-                    {editId === p.id ? (
-                      <>
-                        <TableCell>
-                          <Input
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            className="h-8"
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={editOrderNumber}
-                            onChange={(e) =>
-                              setEditOrderNumber(e.target.value)
-                            }
-                            placeholder="z.B. S254032"
-                            className="h-8"
-                          />
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {editOrderNumber.trim()
-                            ? `${editOrderNumber.trim()} ${editName.trim()}`
-                            : editName.trim()}
-                        </TableCell>
-                        <TableCell>
-                          {p.has_folder ? (
-                            <Badge variant="secondary" className="gap-1">
-                              <FolderOpen className="h-3 w-3" />
-                              Ja
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline">Nein</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={handleSave}
-                              disabled={saving}
-                            >
-                              <Save className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={cancelEdit}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </>
-                    ) : (
-                      <>
-                        <TableCell className="font-medium">{p.name}</TableCell>
-                        <TableCell>
-                          {p.order_number ? (
-                            <Badge variant="secondary">{p.order_number}</Badge>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">
-                              --
-                            </span>
-                          )}
-                        </TableCell>
-                        <TableCell>{p.display_name}</TableCell>
-                        <TableCell>
-                          {p.has_folder ? (
-                            <Badge variant="secondary" className="gap-1">
-                              <FolderOpen className="h-3 w-3" />
-                              Ja
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline">Nein</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => startEdit(p)}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-destructive hover:text-destructive"
-                              onClick={() => setDeleteId(p.id)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </>
-                    )}
+            <div className="space-y-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-8"></TableHead>
+                    <TableHead>Projektname</TableHead>
+                    <TableHead>Bestellnummer</TableHead>
+                    <TableHead>Anzeigename</TableHead>
+                    <TableHead>Ordner</TableHead>
+                    <TableHead>Spalten</TableHead>
+                    <TableHead className="w-[120px]">Aktionen</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {projects.map((p) => (
+                    <>
+                      <TableRow key={p.id}>
+                        <TableCell className="p-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() =>
+                              setExpandedProject(
+                                expandedProject === p.id ? null : p.id
+                              )
+                            }
+                          >
+                            {expandedProject === p.id ? (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </TableCell>
+                        {editId === p.id ? (
+                          <>
+                            <TableCell>
+                              <Input
+                                value={editName}
+                                onChange={(e) => setEditName(e.target.value)}
+                                className="h-8"
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={editOrderNumber}
+                                onChange={(e) =>
+                                  setEditOrderNumber(e.target.value)
+                                }
+                                placeholder="z.B. S254032"
+                                className="h-8"
+                              />
+                            </TableCell>
+                            <TableCell className="text-muted-foreground text-sm">
+                              {editOrderNumber.trim()
+                                ? `${editOrderNumber.trim()} ${editName.trim()}`
+                                : editName.trim()}
+                            </TableCell>
+                            <TableCell>
+                              {p.has_folder ? (
+                                <Badge variant="secondary" className="gap-1">
+                                  <FolderOpen className="h-3 w-3" />
+                                  Ja
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline">Nein</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">
+                                {p.custom_fields?.length || 0}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={handleSave}
+                                  disabled={saving}
+                                >
+                                  <Save className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={cancelEdit}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </>
+                        ) : (
+                          <>
+                            <TableCell className="font-medium">{p.name}</TableCell>
+                            <TableCell>
+                              {p.order_number ? (
+                                <Badge variant="secondary">{p.order_number}</Badge>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">
+                                  --
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>{p.display_name}</TableCell>
+                            <TableCell>
+                              {p.has_folder ? (
+                                <Badge variant="secondary" className="gap-1">
+                                  <FolderOpen className="h-3 w-3" />
+                                  Ja
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline">Nein</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">
+                                {p.custom_fields?.length || 0}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={() => startEdit(p)}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-destructive hover:text-destructive"
+                                  onClick={() => setDeleteId(p.id)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </>
+                        )}
+                      </TableRow>
+
+                      {/* Custom Fields Section (expanded) */}
+                      {expandedProject === p.id && (
+                        <TableRow key={`${p.id}-fields`}>
+                          <TableCell colSpan={7} className="bg-muted/30 px-6 py-4">
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-2 text-sm font-medium">
+                                <Columns3 className="h-4 w-4" />
+                                Zusätzliche Spalten für {p.name}
+                              </div>
+
+                              {/* Existing custom fields */}
+                              {p.custom_fields && p.custom_fields.length > 0 ? (
+                                <div className="space-y-1">
+                                  {p.custom_fields.map((cf) => (
+                                    <div
+                                      key={cf.id}
+                                      className="flex items-center justify-between bg-background rounded px-3 py-1.5 text-sm"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                                          {cf.field_key}
+                                        </code>
+                                        <span>{cf.field_label}</span>
+                                        <Badge variant="outline" className="text-xs">
+                                          {cf.field_type}
+                                        </Badge>
+                                      </div>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 text-destructive hover:text-destructive"
+                                        onClick={() => handleDeleteField(p.id, cf)}
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                      </Button>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">
+                                  Keine zusätzlichen Spalten definiert.
+                                </p>
+                              )}
+
+                              {/* Add new field */}
+                              <div className="flex items-end gap-2 pt-2 border-t">
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Schlüssel</Label>
+                                  <Input
+                                    placeholder="z.B. design_area"
+                                    value={newFieldKey}
+                                    onChange={(e) => setNewFieldKey(e.target.value)}
+                                    className="h-8 w-36 text-sm"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Label</Label>
+                                  <Input
+                                    placeholder="z.B. Design Area"
+                                    value={newFieldLabel}
+                                    onChange={(e) => setNewFieldLabel(e.target.value)}
+                                    className="h-8 w-40 text-sm"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">Typ</Label>
+
+                                  <select
+                                    className="h-8 w-24 text-sm rounded-md border border-input bg-transparent px-2"
+                                    value={newFieldType}
+                                    onChange={(e) => setNewFieldType(e.target.value)}
+                                  >
+                                    <option value="text">Text</option>
+                                    <option value="number">Zahl</option>
+                                    <option value="float">Dezimal</option>
+                                  </select>
+                                </div>
+                                <Button
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => handleAddField(p.id)}
+                                  disabled={addingField}
+                                >
+                                  <Plus className="h-3.5 w-3.5 mr-1" />
+                                  Hinzufügen
+                                </Button>
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

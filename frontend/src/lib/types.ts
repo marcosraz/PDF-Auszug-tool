@@ -11,6 +11,7 @@ export interface ExtractionResult {
   project: string | null;
   ped_cat: string | null;
   customer: string | null;
+  custom_fields?: Record<string, string | number | null>;
 }
 
 export interface ValidationIssue {
@@ -54,12 +55,14 @@ export interface ExampleInfo {
   name: string;
   image_url: string;
   data: ExtractionResult;
+  project_name?: string | null;
 }
 
 export interface SaveExampleRequest {
   name: string;
   extraction_id: string;
   data: ExtractionResult;
+  project_name?: string | null;
 }
 
 export interface ProjectInfo {
@@ -75,6 +78,14 @@ export interface StatsResponse {
   projects: ProjectInfo[];
 }
 
+export interface CustomFieldInfo {
+  id: number;
+  field_key: string;
+  field_label: string;
+  field_type: string;
+  sort_order: number;
+}
+
 export interface ProjectEntry {
   id: number;
   name: string;
@@ -82,9 +93,11 @@ export interface ProjectEntry {
   display_name: string;
   has_folder: boolean;
   created_at: string | null;
+  custom_fields?: CustomFieldInfo[];
 }
 
-export const FIELD_LABELS: Record<keyof ExtractionResult, string> = {
+// Standard field labels (excludes custom_fields which are dynamic)
+export const FIELD_LABELS: Record<string, string> = {
   line_no: "Line No.",
   rev: "Rev.",
   length: "Länge (m)",
@@ -99,7 +112,10 @@ export const FIELD_LABELS: Record<keyof ExtractionResult, string> = {
   customer: "Kunde",
 };
 
-export const EXTRACTION_FIELDS = Object.keys(FIELD_LABELS) as (keyof ExtractionResult)[];
+export const EXTRACTION_FIELDS: (keyof ExtractionResult)[] = [
+  "line_no", "rev", "length", "pid", "pipe_class", "building",
+  "floor", "dn", "insulation", "project", "ped_cat", "customer",
+];
 
 // Analytics types
 

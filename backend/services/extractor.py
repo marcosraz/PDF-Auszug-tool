@@ -27,7 +27,7 @@ from backend.config import (
     IMAGES_DIR, SERVICE_ACCOUNT_JSON, GEMINI_API_KEY,
     FALLBACK_GEMINI_MODEL, CONFIDENCE_RETRY_THRESHOLD, MAX_EMPTY_FIELDS_RETRY,
 )
-from backend.db import get_cached_result, cache_result
+from backend.db import get_cached_result, cache_result, get_custom_fields_by_project_name
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +76,19 @@ def _detect_project_from_filename(filename: str, known_projects: list[str] | Non
     return None
 
 
+def _build_custom_fields_prompt(custom_fields: list[dict]) -> str:
+    """Build additional extraction prompt lines for project-specific custom fields."""
+    if not custom_fields:
+        return ""
+    lines = ["\n\nZUSÄTZLICHE PROJEKT-SPEZIFISCHE FELDER - Extrahiere auch diese:"]
+    for i, cf in enumerate(custom_fields, 13):
+        lines.append(f"\n{i}. {cf['field_key']}: {cf['field_label']} - NUR wenn sichtbar im Titelblock")
+    return "".join(lines)
+
+
 def _extract_single_sync(
-    pdf_path: Path, use_fewshot: bool = True
+    pdf_path: Path, use_fewshot: bool = True,
+    custom_fields: list[dict] | None = None,
 ) -> tuple[str, Path, dict, dict]:
     """Synchronous extraction of a single PDF.
 
@@ -109,6 +120,9 @@ def _extract_single_sync(
     else:
         examples = []
 
+    # Build prompt with custom fields if available
+    extra_prompt = _build_custom_fields_prompt(custom_fields or [])
+
     # Call Gemini - now returns (data, confidence)
     data, confidence = extract_with_gemini(
         image_b64,
@@ -116,7 +130,21 @@ def _extract_single_sync(
         examples=examples,
         credentials_path=SERVICE_ACCOUNT_JSON,
         project=project,
+        extra_prompt=extra_prompt,
     )
+
+    # Separate custom field values from standard fields
+    if custom_fields:
+        cf_keys = {cf["field_key"] for cf in custom_fields}
+        custom_data = {}
+        custom_conf = {}
+        for key in cf_keys:
+            if key in data:
+                custom_data[key] = data.pop(key)
+            if key in confidence:
+                custom_conf[key] = confidence.pop(key)
+        data["custom_fields"] = custom_data
+        confidence["custom_fields"] = custom_conf
 
     return image_id, dest_image, data, confidence
 
@@ -139,7 +167,8 @@ def _should_retry_with_fallback(data: dict, confidence: dict) -> bool:
 
 
 def _extract_single_sync_with_model(
-    pdf_path: Path, use_fewshot: bool, model_override: str
+    pdf_path: Path, use_fewshot: bool, model_override: str,
+    custom_fields: list[dict] | None = None,
 ) -> tuple[str, Path, dict, dict]:
     """Like _extract_single_sync but with explicit model override."""
     from pdf_extractor import DEFAULT_GEMINI_MODEL
@@ -149,7 +178,7 @@ def _extract_single_sync_with_model(
     original_model = pdf_extractor.DEFAULT_GEMINI_MODEL
     pdf_extractor.DEFAULT_GEMINI_MODEL = model_override
     try:
-        return _extract_single_sync(pdf_path, use_fewshot)
+        return _extract_single_sync(pdf_path, use_fewshot, custom_fields)
     finally:
         pdf_extractor.DEFAULT_GEMINI_MODEL = original_model
 
@@ -174,9 +203,18 @@ async def extract_single(
                 shutil.copy2(images[0], dest_image)
                 return image_id, dest_image, data, confidence
 
+    # Load project custom fields for dynamic prompt
+    project = _detect_project_from_filename(pdf_path.name)
+    custom_fields: list[dict] = []
+    if project:
+        try:
+            custom_fields = await get_custom_fields_by_project_name(project)
+        except Exception:
+            logger.exception("Failed to load custom fields for project %s", project)
+
     # Cache miss - run extraction
     image_id, image_path, data, confidence = await asyncio.to_thread(
-        _extract_single_sync, pdf_path, use_fewshot
+        _extract_single_sync, pdf_path, use_fewshot, custom_fields
     )
 
     # Check if we should retry with fallback model
@@ -187,7 +225,7 @@ async def extract_single(
         )
         try:
             fb_id, fb_path, fb_data, fb_confidence = await asyncio.to_thread(
-                _extract_single_sync_with_model, pdf_path, use_fewshot, FALLBACK_GEMINI_MODEL,
+                _extract_single_sync_with_model, pdf_path, use_fewshot, FALLBACK_GEMINI_MODEL, custom_fields,
             )
             # Use fallback if it produced better results
             fb_empty = sum(1 for v in fb_data.values() if v is None or v == "")

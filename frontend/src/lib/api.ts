@@ -14,6 +14,7 @@ import type {
   FeedbackCreate,
   UserEntry,
   ProjectEntry,
+  CustomFieldInfo,
 } from "./types";
 import { getAuthHeaders } from "./auth";
 
@@ -120,10 +121,20 @@ export async function streamBatchProgress(
   return es;
 }
 
-export async function getExamples(): Promise<ExampleInfo[]> {
-  const res = await authFetch(`${API_BASE}/examples`);
+export async function getExamples(project?: string): Promise<ExampleInfo[]> {
+  const params = project ? `?project=${encodeURIComponent(project)}` : "";
+  const res = await authFetch(`${API_BASE}/examples${params}`);
   if (!res.ok) throw new Error("Failed to load examples");
   return res.json();
+}
+
+export async function assignExampleProject(name: string, projectName: string | null): Promise<void> {
+  const res = await authFetch(`${API_BASE}/examples/${encodeURIComponent(name)}/project`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ project_name: projectName }),
+  });
+  if (!res.ok) throw new Error("Failed to assign project");
 }
 
 export async function saveExample(req: SaveExampleRequest): Promise<ExampleInfo> {
@@ -326,5 +337,53 @@ export async function deleteProject(projectId: number): Promise<void> {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || "Failed to delete project");
+  }
+}
+
+// Custom field management
+
+export async function addProjectCustomField(
+  projectId: number,
+  data: { field_key: string; field_label: string; field_type?: string; sort_order?: number }
+): Promise<CustomFieldInfo> {
+  const res = await authFetch(`${API_BASE}/projects/${projectId}/fields`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to add custom field");
+  }
+  return res.json();
+}
+
+export async function updateProjectCustomField(
+  projectId: number,
+  fieldId: number,
+  data: { field_label?: string; field_type?: string; sort_order?: number }
+): Promise<CustomFieldInfo> {
+  const res = await authFetch(`${API_BASE}/projects/${projectId}/fields/${fieldId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to update custom field");
+  }
+  return res.json();
+}
+
+export async function deleteProjectCustomField(
+  projectId: number,
+  fieldId: number
+): Promise<void> {
+  const res = await authFetch(`${API_BASE}/projects/${projectId}/fields/${fieldId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Failed to delete custom field");
   }
 }

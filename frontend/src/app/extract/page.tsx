@@ -10,9 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2 } from "lucide-react";
-import { extractSingle, saveExample, downloadExcel } from "@/lib/api";
+import { Loader2, FolderOpen, Plus } from "lucide-react";
+import { extractSingle, saveExample, downloadExcel, getProjects, createProject } from "@/lib/api";
 import { ExtractionResponse, ExtractionResult, EXTRACTION_FIELDS } from "@/lib/types";
+import type { ProjectEntry, CustomFieldInfo } from "@/lib/types";
 
 export default function ExtractPage() {
   const [files, setFiles] = useState<File[]>([]);
@@ -28,8 +29,67 @@ export default function ExtractPage() {
   const [downloadPending, startDownloadTransition] = useTransition();
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [exampleName, setExampleName] = useState("");
+  const [saveProjectName, setSaveProjectName] = useState<string>("__auto__");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Projects for custom fields and save dialog
+  const [projects, setProjects] = useState<ProjectEntry[]>([]);
+  const [customFieldDefs, setCustomFieldDefs] = useState<CustomFieldInfo[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [showNewProject, setShowNewProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const data = await getProjects();
+      setProjects(data);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  const handleCreateProject = async () => {
+    const name = newProjectName.trim();
+    if (!name) return;
+    setCreatingProject(true);
+    try {
+      const created = await createProject(name);
+      toast.success(`Projekt "${name}" erstellt`);
+      await loadProjects();
+      setSelectedProjectId(String(created.id));
+      setNewProjectName("");
+      setShowNewProject(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Fehler beim Erstellen");
+    } finally {
+      setCreatingProject(false);
+    }
+  };
+
+  // Resolve selected project
+  const selectedProject = projects.find((p) => String(p.id) === selectedProjectId);
+
+  // Update custom field definitions when project changes (pre-selected or from extraction)
+  useEffect(() => {
+    // Pre-selected project takes priority
+    if (selectedProject) {
+      setCustomFieldDefs(selectedProject.custom_fields || []);
+      return;
+    }
+    // Fall back to project detected in extraction
+    if (!editedData?.project || projects.length === 0) {
+      setCustomFieldDefs([]);
+      return;
+    }
+    const proj = projects.find(
+      (p) => p.name.toLowerCase() === editedData.project?.toLowerCase()
+    );
+    setCustomFieldDefs(proj?.custom_fields || []);
+  }, [selectedProject, editedData?.project, projects]);
 
   useEffect(() => {
     if (extracting) {
@@ -94,7 +154,12 @@ export default function ExtractPage() {
       ).length;
       toast.success(`${res.filename}: ${filledFields}/${EXTRACTION_FIELDS.length} Felder extrahiert`);
       setResult(res);
-      setEditedData({ ...res.result });
+      // If a project was pre-selected, override the extracted project field
+      const resultData = { ...res.result };
+      if (selectedProject) {
+        resultData.project = selectedProject.name;
+      }
+      setEditedData(resultData);
     } catch (err) {
       toast.error(`Fehler: ${err instanceof Error ? err.message : "Unbekannt"}`);
     } finally {
@@ -134,8 +199,33 @@ export default function ExtractPage() {
     setDirty(newDirty);
   };
 
+  const handleCustomFieldChange = (key: string, value: string) => {
+    if (!editedData || !result) return;
+    const newCustom = { ...(editedData.custom_fields || {}), [key]: value || null };
+    setEditedData({ ...editedData, custom_fields: newCustom });
+
+    const dirtyKey = `custom:${key}`;
+    const newDirty = new Set(dirty);
+    const origVal = result.result.custom_fields?.[key] ?? null;
+    if ((value || null) !== origVal) {
+      newDirty.add(dirtyKey);
+    } else {
+      newDirty.delete(dirtyKey);
+    }
+    setDirty(newDirty);
+  };
+
   const handleSaveExample = () => {
     if (!result || !editedData || !exampleName.trim()) return;
+
+    // Determine project name for assignment
+    let projectName: string | null = null;
+    if (saveProjectName === "__auto__") {
+      projectName = editedData.project || null;
+    } else if (saveProjectName !== "__none__") {
+      projectName = saveProjectName;
+    }
+
     startSaveTransition(async () => {
       clearOptimisticDirty("clear");
       try {
@@ -143,6 +233,7 @@ export default function ExtractPage() {
           name: exampleName.trim().replace(/\s+/g, "_"),
           extraction_id: result.id,
           data: editedData,
+          project_name: projectName,
         });
         toast.success(`Beispiel "${exampleName}" gespeichert!`);
         setShowSaveDialog(false);
@@ -171,17 +262,23 @@ export default function ExtractPage() {
     });
   };
 
+  const openSaveDialog = () => {
+    if (!editedData) return;
+    const projectNameForSave = selectedProject?.name || editedData.project || "pdf";
+    const suggestedName = `example_${projectNameForSave.replace(/\s+/g, "_").toLowerCase()}_${(editedData.line_no || "unknown").replace(/[^a-zA-Z0-9-]/g, "_")}`;
+    setExampleName(suggestedName);
+    // If a project was pre-selected, use it directly instead of "auto"
+    setSaveProjectName(selectedProject ? selectedProject.name : "__auto__");
+    setShowSaveDialog(true);
+  };
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Ctrl+Enter = Save as example
       if (e.ctrlKey && e.key === "Enter" && result && editedData) {
         e.preventDefault();
-        const suggestedName = `example_${(editedData.project || "pdf").replace(/\s+/g, "_").toLowerCase()}_${(editedData.line_no || "unknown").replace(/[^a-zA-Z0-9-]/g, "_")}`;
-        setExampleName(suggestedName);
-        setShowSaveDialog(true);
+        openSaveDialog();
       }
-      // Ctrl+S = Download Excel
       if (e.ctrlKey && e.key === "s" && editedData) {
         e.preventDefault();
         handleDownload();
@@ -202,13 +299,81 @@ export default function ExtractPage() {
       </div>
 
       {!result && (
-        <div className="max-w-xl">
+        <div className="max-w-xl space-y-4">
+          {/* Project selector */}
+          <div className="space-y-2">
+            <Label className="text-sm font-medium flex items-center gap-1.5">
+              <FolderOpen className="h-4 w-4" />
+              Projekt
+            </Label>
+            {!showNewProject ? (
+              <div className="flex gap-2">
+                <select
+                  className="flex-1 h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+                  value={selectedProjectId}
+                  onChange={(e) => setSelectedProjectId(e.target.value)}
+                >
+                  <option value="">Kein Projekt (automatisch erkennen)</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={String(p.id)}>
+                      {p.display_name}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 shrink-0"
+                  onClick={() => setShowNewProject(true)}
+                  title="Neues Projekt erstellen"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Neuer Projektname..."
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCreateProject()}
+                  className="h-9"
+                  autoFocus
+                />
+                <Button
+                  size="sm"
+                  className="h-9"
+                  onClick={handleCreateProject}
+                  disabled={creatingProject || !newProjectName.trim()}
+                >
+                  {creatingProject ? <Loader2 className="h-4 w-4 animate-spin" /> : "Erstellen"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9"
+                  onClick={() => { setShowNewProject(false); setNewProjectName(""); }}
+                >
+                  Abbrechen
+                </Button>
+              </div>
+            )}
+            {selectedProject && (
+              <p className="text-xs text-muted-foreground">
+                {selectedProject.order_number && <span className="font-mono">{selectedProject.order_number} · </span>}
+                {selectedProject.custom_fields?.length
+                  ? `${selectedProject.custom_fields.length} zusätzliche Spalte(n)`
+                  : "Keine zusätzlichen Spalten"}
+              </p>
+            )}
+          </div>
+
           <PdfDropzone onFiles={handleFiles} files={files} />
           {files.length > 0 && (
             <Button
               onClick={handleExtract}
               disabled={extracting}
-              className="mt-4 w-full"
+              className="w-full"
             >
               {extracting ? (
                 <>
@@ -221,7 +386,7 @@ export default function ExtractPage() {
             </Button>
           )}
           {extracting && (
-            <div className="mt-6 space-y-3" aria-live="polite" aria-busy="true">
+            <div className="space-y-3" aria-live="polite" aria-busy="true">
               <Skeleton className="h-4 w-3/4" />
               <Skeleton className="h-4 w-1/2" />
               <Skeleton className="h-4 w-2/3" />
@@ -243,15 +408,14 @@ export default function ExtractPage() {
               <ExtractionForm
                 data={editedData}
                 onChange={handleFieldChange}
-                onSaveExample={() => {
-                  const suggestedName = `example_${(editedData.project || "pdf").replace(/\s+/g, "_").toLowerCase()}_${(editedData.line_no || "unknown").replace(/[^a-zA-Z0-9-]/g, "_")}`;
-                  setExampleName(suggestedName);
-                  setShowSaveDialog(true);
-                }}
+                onChangeCustom={handleCustomFieldChange}
+                onSaveExample={openSaveDialog}
                 onDownload={handleDownload}
                 saving={savePending}
                 downloading={downloadPending}
                 dirty={optimisticDirty}
+                confidence={result.confidence as Record<string, number> | undefined}
+                customFieldDefs={customFieldDefs}
               />
 
               {/* Validation warnings */}
@@ -319,19 +483,41 @@ export default function ExtractPage() {
         </>
       )}
 
+      {/* Save Example Dialog with Project Selection */}
       <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Als Trainingsbeispiel speichern</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="example-name">Name des Beispiels</Label>
-            <Input
-              id="example-name"
-              value={exampleName}
-              onChange={(e) => setExampleName(e.target.value)}
-              placeholder="z.B. example_kujira_line42"
-            />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="example-name">Name des Beispiels</Label>
+              <Input
+                id="example-name"
+                value={exampleName}
+                onChange={(e) => setExampleName(e.target.value)}
+                placeholder="z.B. example_kujira_line42"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Projekt zuweisen</Label>
+
+              <select
+                className="w-full h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+                value={saveProjectName}
+                onChange={(e) => setSaveProjectName(e.target.value)}
+              >
+                <option value="__auto__">
+                  Automatisch ({editedData?.project || "keins"})
+                </option>
+                <option value="__none__">Kein Projekt</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.name}>
+                    {p.display_name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <p className="text-xs text-muted-foreground">
               Das Bild und die korrigierten Daten werden als neues Few-Shot-Beispiel gespeichert.
               Zukünftige Extraktionen nutzen dieses Beispiel automatisch.
