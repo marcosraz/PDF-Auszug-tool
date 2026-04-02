@@ -135,6 +135,50 @@ def validate_extraction(data: dict) -> list[dict]:
             "message": "Line No. enthält keine Bindestriche - Format prüfen",
         })
 
+    # 6. Building should not be a company/customer name
+    building = data.get("building")
+    if building and isinstance(building, str):
+        customer_keywords = ["AG", "GMBH", "INC", "LTD", "CORP", "GROUP", "LONZA", "THERMOFISHER", "FISHER"]
+        building_upper = building.upper()
+        for kw in customer_keywords:
+            if kw in building_upper and len(building) > 4:
+                issues.append({
+                    "field": "building",
+                    "type": "warning",
+                    "message": f"'{building}' sieht nach einem Kundennamen aus, nicht nach einem Gebäude",
+                })
+                break
+
+    # 7. Length plausibility (piping isometrics usually 0.1-100m)
+    if length is not None:
+        try:
+            length_val = float(length)
+            if length_val > 200:
+                issues.append({
+                    "field": "length",
+                    "type": "warning",
+                    "message": f"Länge {length_val}m ungewöhnlich hoch - Einheit prüfen (evtl. mm statt m?)",
+                })
+        except (ValueError, TypeError):
+            pass
+
+    # 8. Pipe class in line_no consistency
+    pipe_class = data.get("pipe_class")
+    if pipe_class and line_no and isinstance(line_no, str) and isinstance(pipe_class, str):
+        if pipe_class.upper() in line_no.upper():
+            pass  # Consistent
+        # Only flag if pipe_class looks like it could be in the line_no but doesn't match
+        # (not all pipe classes appear in line numbers)
+
+    # 9. Line No. should not be empty when other fields are filled
+    filled_count = sum(1 for k in ("pid", "dn", "pipe_class", "building") if data.get(k))
+    if not line_no and filled_count >= 2:
+        issues.append({
+            "field": "line_no",
+            "type": "warning",
+            "message": "Line No. fehlt, obwohl andere Felder extrahiert wurden",
+        })
+
     return issues
 
 

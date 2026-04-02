@@ -22,6 +22,7 @@ from backend.db import (
     get_example_metadata_all,
     set_example_project,
     get_examples_by_project_name,
+    get_example_effectiveness,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,12 @@ async def get_examples(project: str | None = Query(None)):
     examples = list_examples()
     metadata = await get_example_metadata_all()
 
+    # Load effectiveness data (times_used, accuracy per example)
+    effectiveness_rows = await get_example_effectiveness()
+    effectiveness = {
+        r["example_name"]: r for r in effectiveness_rows
+    }
+
     # Filter by project if requested
     if project:
         project_examples = await get_examples_by_project_name(project)
@@ -47,6 +54,8 @@ async def get_examples(project: str | None = Query(None)):
             image_url=ex["image_url"],
             data=ExtractionResult(**ex["data"]),
             project_name=metadata.get(ex["name"]),
+            times_used=effectiveness.get(ex["name"], {}).get("times_used", 0),
+            accuracy=effectiveness.get(ex["name"], {}).get("accuracy"),
         )
         for ex in examples
     ]

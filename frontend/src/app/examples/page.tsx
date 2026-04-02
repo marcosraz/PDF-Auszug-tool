@@ -12,7 +12,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Trash2, GraduationCap, FolderInput } from "lucide-react";
+import { Trash2, GraduationCap, FolderInput, AlertTriangle, TrendingUp } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import {
   getExamples,
   deleteExample,
@@ -205,6 +206,47 @@ export default function ExamplesPage() {
                     </Badge>
                   )}
                 </div>
+                {/* Effectiveness indicator */}
+                {(ex.times_used ?? 0) > 0 && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={<span />}
+                        className="flex items-center gap-1"
+                      >
+                        <TrendingUp className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-muted-foreground">{ex.times_used}x genutzt</span>
+                        {ex.accuracy != null && (
+                          <span className={`font-medium ${
+                            ex.accuracy >= 0.9 ? "text-emerald-600" :
+                            ex.accuracy >= 0.7 ? "text-amber-600" :
+                            "text-red-600"
+                          }`}>
+                            {(ex.accuracy * 100).toFixed(0)}%
+                          </span>
+                        )}
+                      </TooltipTrigger>
+                      <TooltipContent side="top">
+                        {ex.accuracy != null
+                          ? `Genauigkeit: ${(ex.accuracy * 100).toFixed(1)}% bei ${ex.times_used} Extraktionen`
+                          : `${ex.times_used}x als Few-Shot-Beispiel verwendet`}
+                      </TooltipContent>
+                    </Tooltip>
+                    {ex.accuracy != null && ex.accuracy < 0.5 && (ex.times_used ?? 0) >= 3 && (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={<span />}
+                          className="flex items-center"
+                        >
+                          <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          Niedrige Genauigkeit - dieses Beispiel könnte Extraktionen verschlechtern
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
+                )}
                 <div className="flex gap-1">
                   <Button
                     variant="ghost"

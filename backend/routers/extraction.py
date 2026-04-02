@@ -1,5 +1,6 @@
 """Extraction API endpoints"""
 import asyncio
+import hashlib
 import json
 import logging
 import tempfile
@@ -93,6 +94,20 @@ async def extract_pdf(request: Request, file: UploadFile = File(...)):
         examples = list_examples()
         num_examples = len(examples)
 
+        # Compute prompt hash for versioning
+        from pdf_extractor import EXTRACTION_PROMPT
+        prompt_hash = hashlib.sha256(EXTRACTION_PROMPT.encode()).hexdigest()[:12]
+
+        # Auto-approve if all filled fields have high confidence (>= 0.9)
+        status = "completed"
+        if confidence:
+            filled_confs = [
+                v for k, v in confidence.items()
+                if v is not None and data.get(k) is not None
+            ]
+            if filled_confs and all(c >= 0.9 for c in filled_confs):
+                status = "reviewed"
+
         # Log to analytics DB (single atomic transaction)
         username = getattr(request.state, "username", "anonymous")
         try:
@@ -105,7 +120,8 @@ async def extract_pdf(request: Request, file: UploadFile = File(...)):
                 project=project,
                 num_examples=num_examples,
                 duration=duration,
-                status="completed",
+                prompt_hash=prompt_hash,
+                status=status,
                 user=username,
             )
             await log_audit("extract", user=username, details={"filename": file.filename, "project": project})

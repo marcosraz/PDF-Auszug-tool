@@ -85,6 +85,8 @@ class ExampleInfo(BaseModel):
     image_url: str
     data: ExtractionResult
     project_name: str | None = None
+    times_used: int = 0
+    accuracy: float | None = None
 
 
 class SaveExampleRequest(BaseModel):

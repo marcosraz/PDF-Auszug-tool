@@ -340,6 +340,15 @@ export async function deleteProject(projectId: number): Promise<void> {
   }
 }
 
+export async function downloadProjectExcel(projectName: string): Promise<Blob> {
+  const res = await authFetch(`${API_BASE}/export/project/${encodeURIComponent(projectName)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || "Export failed");
+  }
+  return res.blob();
+}
+
 // Custom field management
 
 export async function addProjectCustomField(

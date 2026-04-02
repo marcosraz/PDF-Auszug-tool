@@ -56,6 +56,8 @@ export interface ExampleInfo {
   image_url: string;
   data: ExtractionResult;
   project_name?: string | null;
+  times_used?: number;
+  accuracy?: number | null;
 }
 
 export interface SaveExampleRequest {

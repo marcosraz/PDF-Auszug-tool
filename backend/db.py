@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS extractions (
     num_examples_used INTEGER DEFAULT 0,
     duration_seconds FLOAT,
     token_count INTEGER,
+    prompt_hash TEXT,
     status TEXT DEFAULT 'completed',
     user TEXT DEFAULT 'anonymous',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -193,6 +194,10 @@ CREATE TABLE IF NOT EXISTS example_metadata (
 );
 CREATE INDEX IF NOT EXISTS idx_em_project ON example_metadata(project_id);
 """,
+    # Version 5: add prompt_hash column to extractions for prompt versioning
+    5: """
+ALTER TABLE extractions ADD COLUMN prompt_hash TEXT;
+""",
 }
 
 LATEST_SCHEMA_VERSION = max(_MIGRATIONS)
@@ -262,6 +267,7 @@ async def log_extraction_full(
     num_examples: int = 0,
     duration: float | None = None,
     token_count: int | None = None,
+    prompt_hash: str | None = None,
     status: str = "completed",
     user: str = "anonymous",
 ):
@@ -275,9 +281,9 @@ async def log_extraction_full(
         await db.execute("BEGIN IMMEDIATE")
         await db.execute(
             """INSERT INTO extractions
-               (id, filename, project, model, num_examples_used, duration_seconds, token_count, status, user)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (id, filename, project, model, num_examples, duration, token_count, status, user),
+               (id, filename, project, model, num_examples_used, duration_seconds, token_count, prompt_hash, status, user)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, filename, project, model, num_examples, duration, token_count, prompt_hash, status, user),
         )
         for field_name, value in fields_dict.items():
             confidence = confidence_dict.get(field_name)
@@ -636,6 +642,39 @@ async def get_example_effectiveness() -> list[dict]:
                LIMIT 50"""
         )
         return [dict(r) for r in rows]
+    finally:
+        await db.close()
+
+
+async def get_project_extractions(project_name: str) -> list[dict]:
+    """Get all extractions for a project with their field values (for Excel export)."""
+    db = await _connect()
+    try:
+        db.row_factory = aiosqlite.Row
+        rows = await db.execute_fetchall(
+            """SELECT e.id, e.filename, e.created_at,
+                      ef.field_name, ef.extracted_value, ef.was_corrected, ef.corrected_value
+               FROM extractions e
+               LEFT JOIN extraction_fields ef ON e.id = ef.extraction_id
+               WHERE e.project = ?
+               ORDER BY e.created_at DESC, e.id""",
+            (project_name,),
+        )
+        extractions: dict[str, dict] = {}
+        for r in rows:
+            ext_id = r["id"]
+            if ext_id not in extractions:
+                extractions[ext_id] = {
+                    "id": ext_id,
+                    "filename": r["filename"],
+                    "created_at": r["created_at"],
+                    "fields": {},
+                }
+            if r["field_name"]:
+                # Use corrected value if available
+                val = r["corrected_value"] if r["was_corrected"] else r["extracted_value"]
+                extractions[ext_id]["fields"][r["field_name"]] = val
+        return list(extractions.values())
     finally:
         await db.close()
 

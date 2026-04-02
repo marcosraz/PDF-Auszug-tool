@@ -34,6 +34,7 @@ import {
   ChevronDown,
   ChevronRight,
   Columns3,
+  Download,
 } from "lucide-react";
 import {
   getProjects,
@@ -42,6 +43,7 @@ import {
   deleteProject,
   addProjectCustomField,
   deleteProjectCustomField,
+  downloadProjectExcel,
 } from "@/lib/api";
 import type { ProjectEntry, CustomFieldInfo } from "@/lib/types";
 
@@ -346,6 +348,29 @@ export default function ProjectsPage() {
                             </TableCell>
                             <TableCell>
                               <div className="flex gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      const blob = await downloadProjectExcel(p.name);
+                                      const url = URL.createObjectURL(blob);
+                                      const a = document.createElement("a");
+                                      a.href = url;
+                                      a.download = `${p.name}_extractions.xlsx`;
+                                      a.click();
+                                      URL.revokeObjectURL(url);
+                                      toast.success("Excel heruntergeladen");
+                                    } catch {
+                                      toast.error("Keine Extraktionen für dieses Projekt");
+                                    }
+                                  }}
+                                  title="Alle Extraktionen als Excel"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                </Button>
                                 <Button
                                   variant="ghost"
                                   size="icon"

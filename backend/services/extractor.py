@@ -27,7 +27,7 @@ from backend.config import (
     IMAGES_DIR, SERVICE_ACCOUNT_JSON, GEMINI_API_KEY,
     FALLBACK_GEMINI_MODEL, CONFIDENCE_RETRY_THRESHOLD, MAX_EMPTY_FIELDS_RETRY,
 )
-from backend.db import get_cached_result, cache_result, get_custom_fields_by_project_name
+from backend.db import get_cached_result, cache_result, get_custom_fields_by_project_name, get_example_effectiveness
 
 logger = logging.getLogger(__name__)
 
@@ -113,10 +113,15 @@ def _extract_single_sync(
     # Detect project from filename for smart example selection
     project = _detect_project_from_filename(pdf_path.name)
 
-    # Load and select few-shot examples
+    # Load and select few-shot examples (score-based selection)
     if use_fewshot:
         all_examples = load_examples()
-        examples = select_examples(all_examples, project=project)
+        try:
+            eff_rows = await get_example_effectiveness()
+            eff_map = {r["example_name"]: r for r in eff_rows}
+        except Exception:
+            eff_map = None
+        examples = select_examples(all_examples, project=project, effectiveness=eff_map)
     else:
         examples = []
 

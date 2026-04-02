@@ -121,13 +121,17 @@ def load_examples(project: str = None) -> list[dict]:
 
 
 def select_examples(all_examples: list[dict], project: str = None,
-                    max_examples: int = 5) -> list[dict]:
+                    max_examples: int = 5,
+                    effectiveness: dict[str, dict] | None = None) -> list[dict]:
     """Smart few-shot example selection prioritizing project-specific examples.
+
+    Selects by effectiveness score (accuracy * usage) instead of random.
 
     Args:
         all_examples: All loaded examples.
         project: Optional project name to prioritize matching examples.
         max_examples: Maximum number of examples to return (default 5).
+        effectiveness: Optional dict of {example_name: {times_used, accuracy}}.
 
     Returns:
         Selected subset of examples, prioritizing same-project examples
@@ -139,9 +143,28 @@ def select_examples(all_examples: list[dict], project: str = None,
     if len(all_examples) <= max_examples:
         return all_examples
 
+    def _score(ex: dict) -> float:
+        """Score an example by effectiveness. Higher = better."""
+        if not effectiveness:
+            return 0.0
+        stats = effectiveness.get(ex.get("name", ""), {})
+        times_used = stats.get("times_used", 0)
+        accuracy = stats.get("accuracy")
+        if accuracy is None or times_used == 0:
+            # Untested examples get a neutral score (give them a chance)
+            return 0.5
+        # Weighted: accuracy matters most, slight bonus for well-tested examples
+        return accuracy * min(1.0, times_used / 5.0)
+
+    def _pick_top(candidates: list[dict], n: int) -> list[dict]:
+        """Pick top N candidates by effectiveness score."""
+        if len(candidates) <= n:
+            return candidates
+        ranked = sorted(candidates, key=_score, reverse=True)
+        return ranked[:n]
+
     if not project:
-        # No project hint - return random selection
-        return random.sample(all_examples, min(max_examples, len(all_examples)))
+        return _pick_top(all_examples, max_examples)
 
     project_lower = project.lower()
 
@@ -156,9 +179,9 @@ def select_examples(all_examples: list[dict], project: str = None,
         else:
             other_project.append(ex)
 
-    # If no project-specific examples, fall back to random selection
+    # If no project-specific examples, fall back to score-based selection
     if not same_project:
-        return random.sample(all_examples, min(max_examples, len(all_examples)))
+        return _pick_top(all_examples, max_examples)
 
     selected = []
 
@@ -166,16 +189,13 @@ def select_examples(all_examples: list[dict], project: str = None,
     diversity_count = min(1, len(other_project))
     same_slots = max_examples - diversity_count
 
-    # Add same-project examples (up to same_slots)
-    if len(same_project) <= same_slots:
-        selected.extend(same_project)
-    else:
-        selected.extend(random.sample(same_project, same_slots))
+    # Add same-project examples (top by score)
+    selected.extend(_pick_top(same_project, same_slots))
 
     # Fill remaining slots with other-project examples for diversity
     remaining = max_examples - len(selected)
     if remaining > 0 and other_project:
-        selected.extend(random.sample(other_project, min(remaining, len(other_project))))
+        selected.extend(_pick_top(other_project, remaining))
 
     return selected
 

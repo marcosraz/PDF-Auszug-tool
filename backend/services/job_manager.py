@@ -9,7 +9,9 @@ from pathlib import Path
 
 from backend.models.schemas import BatchJob, ExtractionResponse, ExtractionResult, ConfidenceScores
 from backend.services.extractor import extract_single
+from backend.services.validation import normalize_extraction, validate_extraction
 from backend.config import JOB_MAX_AGE_SECONDS
+from backend.db import log_extraction_full
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +119,8 @@ async def run_batch(job_id: str, pdf_paths: list[Path]):
         try:
             image_id, image_path, data, confidence = await extract_single(pdf_path)
 
+            # Normalize and build response
+            data = normalize_extraction(data)
             confidence_scores = ConfidenceScores(**confidence) if confidence else None
 
             result = ExtractionResponse(
@@ -129,6 +133,23 @@ async def run_batch(job_id: str, pdf_paths: list[Path]):
             )
             job.results.append(result)
             job.completed += 1
+
+            # Log to analytics DB so batch results are persisted
+            try:
+                await log_extraction_full(
+                    id=image_id,
+                    filename=pdf_path.name,
+                    fields_dict=data,
+                    confidence_dict=confidence,
+                    example_names=[],
+                    project=data.get("project"),
+                    num_examples=0,
+                    duration=0,
+                    status="completed",
+                    user="batch",
+                )
+            except Exception:
+                logger.exception("Failed to log batch extraction to DB")
 
             await queue.put({
                 "type": "progress",
