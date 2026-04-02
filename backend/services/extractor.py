@@ -89,6 +89,7 @@ def _build_custom_fields_prompt(custom_fields: list[dict]) -> str:
 def _extract_single_sync(
     pdf_path: Path, use_fewshot: bool = True,
     custom_fields: list[dict] | None = None,
+    effectiveness: dict | None = None,
 ) -> tuple[str, Path, dict, dict]:
     """Synchronous extraction of a single PDF.
 
@@ -116,12 +117,7 @@ def _extract_single_sync(
     # Load and select few-shot examples (score-based selection)
     if use_fewshot:
         all_examples = load_examples()
-        try:
-            eff_rows = await get_example_effectiveness()
-            eff_map = {r["example_name"]: r for r in eff_rows}
-        except Exception:
-            eff_map = None
-        examples = select_examples(all_examples, project=project, effectiveness=eff_map)
+        examples = select_examples(all_examples, project=project, effectiveness=effectiveness)
     else:
         examples = []
 
@@ -217,9 +213,16 @@ async def extract_single(
         except Exception:
             logger.exception("Failed to load custom fields for project %s", project)
 
+    # Load effectiveness data for score-based example selection
+    try:
+        eff_rows = await get_example_effectiveness()
+        eff_map = {r["example_name"]: r for r in eff_rows}
+    except Exception:
+        eff_map = None
+
     # Cache miss - run extraction
     image_id, image_path, data, confidence = await asyncio.to_thread(
-        _extract_single_sync, pdf_path, use_fewshot, custom_fields
+        _extract_single_sync, pdf_path, use_fewshot, custom_fields, eff_map
     )
 
     # Check if we should retry with fallback model
