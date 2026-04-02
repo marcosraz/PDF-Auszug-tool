@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { PdfDropzone } from "@/components/pdf-dropzone";
 import { BatchProgress, type BatchFile } from "@/components/batch-progress";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -14,9 +16,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Download, Play } from "lucide-react";
-import { startBatch, streamBatchProgress, downloadExcel } from "@/lib/api";
+import { Download, Play, FolderOpen, Plus, Loader2 } from "lucide-react";
+import { startBatch, streamBatchProgress, downloadExcel, getProjects, createProject } from "@/lib/api";
 import { ExtractionResponse, FIELD_LABELS } from "@/lib/types";
+import type { ProjectEntry } from "@/lib/types";
 
 export default function BatchPage() {
   const [files, setFiles] = useState<File[]>([]);
@@ -27,6 +30,44 @@ export default function BatchPage() {
   const [results, setResults] = useState<ExtractionResponse[]>([]);
   const [done, setDone] = useState(false);
   const currentIndexRef = useRef(0);
+
+  // Project selector state
+  const [projects, setProjects] = useState<ProjectEntry[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [showNewProject, setShowNewProject] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const data = await getProjects();
+      setProjects(data);
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  const selectedProject = projects.find((p) => String(p.id) === selectedProjectId);
+
+  const handleCreateProject = async () => {
+    const name = newProjectName.trim();
+    if (!name) return;
+    setCreatingProject(true);
+    try {
+      const created = await createProject(name);
+      toast.success(`Projekt "${name}" erstellt`);
+      await loadProjects();
+      setSelectedProjectId(String(created.id));
+      setNewProjectName("");
+      setShowNewProject(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Fehler beim Erstellen");
+    } finally {
+      setCreatingProject(false);
+    }
+  };
 
   const handleFiles = useCallback((newFiles: File[]) => {
     setFiles((prev) => [...prev, ...newFiles]);
@@ -57,6 +98,10 @@ export default function BatchPage() {
         (event) => {
           if (event.type === "progress") {
             const latest = event.latest as ExtractionResponse;
+            // Override project if one was pre-selected
+            if (selectedProject) {
+              latest.result.project = selectedProject.name;
+            }
             setCompleted(event.completed as number);
             setResults((prev) => [...prev, latest]);
 
@@ -158,7 +203,75 @@ export default function BatchPage() {
       </div>
 
       {!running && !done && (
-        <>
+        <div className="space-y-4">
+          {/* Project selector */}
+          <div className="space-y-2 max-w-xl">
+            <Label className="text-sm font-medium flex items-center gap-1.5">
+              <FolderOpen className="h-4 w-4" />
+              Projekt
+            </Label>
+            {!showNewProject ? (
+              <div className="flex gap-2">
+                <select
+                  className="flex-1 h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+                  value={selectedProjectId}
+                  onChange={(e) => setSelectedProjectId(e.target.value)}
+                >
+                  <option value="">Kein Projekt (automatisch erkennen)</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={String(p.id)}>
+                      {p.display_name}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 shrink-0"
+                  onClick={() => setShowNewProject(true)}
+                  title="Neues Projekt erstellen"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Neuer Projektname..."
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCreateProject()}
+                  className="h-9"
+                  autoFocus
+                />
+                <Button
+                  size="sm"
+                  className="h-9"
+                  onClick={handleCreateProject}
+                  disabled={creatingProject || !newProjectName.trim()}
+                >
+                  {creatingProject ? <Loader2 className="h-4 w-4 animate-spin" /> : "Erstellen"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9"
+                  onClick={() => { setShowNewProject(false); setNewProjectName(""); }}
+                >
+                  Abbrechen
+                </Button>
+              </div>
+            )}
+            {selectedProject && (
+              <p className="text-xs text-muted-foreground">
+                {selectedProject.order_number && <span className="font-mono">{selectedProject.order_number} · </span>}
+                {selectedProject.custom_fields?.length
+                  ? `${selectedProject.custom_fields.length} zusätzliche Spalte(n)`
+                  : "Keine zusätzlichen Spalten"}
+              </p>
+            )}
+          </div>
+
           <PdfDropzone onFiles={handleFiles} multiple files={files} />
           {files.length > 0 && (
             <div className="flex items-center gap-3">
@@ -174,7 +287,7 @@ export default function BatchPage() {
               </Button>
             </div>
           )}
-        </>
+        </div>
       )}
 
       {(running || done) && batchFiles.length > 0 && (
