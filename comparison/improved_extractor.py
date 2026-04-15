@@ -131,7 +131,7 @@ def parse_json_response(text: str) -> dict:
 
     try:
         return json.loads(text)
-    except:
+    except (json.JSONDecodeError, ValueError):
         pass
 
     # Fallback: find JSON object
@@ -139,7 +139,7 @@ def parse_json_response(text: str) -> dict:
     if match:
         try:
             return json.loads(match.group())
-        except:
+        except (json.JSONDecodeError, ValueError):
             pass
 
     return {}
@@ -285,7 +285,7 @@ def create_excel(data_list: list[dict], output_path: Path):
             try:
                 if cell.value and len(str(cell.value)) > max_length:
                     max_length = len(str(cell.value))
-            except:
+            except (TypeError, ValueError):
                 pass
         ws.column_dimensions[column_letter].width = min(max_length + 2, 40)
 

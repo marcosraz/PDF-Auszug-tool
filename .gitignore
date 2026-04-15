@@ -1,6 +1,7 @@
 # API Keys und Secrets
 .env
 *.env
+.jwt_secret
 
 # Python
 __pycache__/

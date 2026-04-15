@@ -29,6 +29,7 @@ export default function BatchPage() {
   const [total, setTotal] = useState(0);
   const [results, setResults] = useState<ExtractionResponse[]>([]);
   const [done, setDone] = useState(false);
+  const [batchStartTime, setBatchStartTime] = useState<number | null>(null);
   const currentIndexRef = useRef(0);
 
   // Project selector state
@@ -42,7 +43,9 @@ export default function BatchPage() {
     try {
       const data = await getProjects();
       setProjects(data);
-    } catch { /* ignore */ }
+    } catch {
+      toast.error("Projekte konnten nicht geladen werden");
+    }
   }, []);
 
   useEffect(() => {
@@ -80,6 +83,7 @@ export default function BatchPage() {
     setResults([]);
     setCompleted(0);
     setTotal(files.length);
+    setBatchStartTime(Date.now());
 
     const initial: BatchFile[] = files.map((f) => ({
       name: f.name,
@@ -300,6 +304,7 @@ export default function BatchPage() {
               files={batchFiles}
               completed={completed}
               total={total}
+              startTime={batchStartTime ?? undefined}
             />
           </CardContent>
         </Card>

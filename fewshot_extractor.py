@@ -153,7 +153,7 @@ def extract_with_fewshot(image_base64: str, examples: list[dict], model: str = "
         data = json.loads(text)
         data["_duration"] = duration
         return data
-    except:
+    except (json.JSONDecodeError, ValueError):
         # Fallback: find JSON object
         match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
         if match:
@@ -161,7 +161,7 @@ def extract_with_fewshot(image_base64: str, examples: list[dict], model: str = "
                 data = json.loads(match.group())
                 data["_duration"] = duration
                 return data
-            except:
+            except (json.JSONDecodeError, ValueError):
                 pass
 
     return {"_error": "JSON parse failed", "_raw": text[:300], "_duration": duration}
@@ -215,14 +215,14 @@ def extract_without_fewshot(image_base64: str, model: str = "gemini-3-flash-prev
         data = json.loads(text)
         data["_duration"] = duration
         return data
-    except:
+    except (json.JSONDecodeError, ValueError):
         match = re.search(r'\{[^{}]*\}', text, re.DOTALL)
         if match:
             try:
                 data = json.loads(match.group())
                 data["_duration"] = duration
                 return data
-            except:
+            except (json.JSONDecodeError, ValueError):
                 pass
 
     return {"_error": "JSON parse failed", "_raw": text[:200], "_duration": duration}

@@ -20,11 +20,16 @@ from pydantic import BaseModel
 _env_secret = os.environ.get("JWT_SECRET_KEY", "")
 if not _env_secret:
     import logging as _logging
-    _logging.getLogger(__name__).warning(
-        "JWT_SECRET_KEY not set — generating random key. "
-        "All tokens will be invalidated on restart!"
-    )
-    _env_secret = secrets.token_urlsafe(32)
+    _secret_file = Path(__file__).parent / ".jwt_secret"
+    if _secret_file.exists():
+        _env_secret = _secret_file.read_text(encoding="utf-8").strip()
+    else:
+        _logging.getLogger(__name__).info(
+            "JWT_SECRET_KEY not set — generating and persisting key to %s",
+            _secret_file,
+        )
+        _env_secret = secrets.token_urlsafe(32)
+        _secret_file.write_text(_env_secret, encoding="utf-8")
 SECRET_KEY = _env_secret
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 24
@@ -159,11 +164,16 @@ def create_sse_token(username: str, ttl_seconds: int = 60) -> str:
 
 def validate_sse_token(token: str) -> Optional[str]:
     """Validate and consume an SSE token. Returns username if valid."""
+    now = datetime.now(timezone.utc)
     with _sse_lock:
         entry = _sse_tokens.pop(token, None)
+        # Opportunistic cleanup: remove all expired tokens
+        expired = [k for k, (_, exp) in _sse_tokens.items() if now > exp]
+        for k in expired:
+            del _sse_tokens[k]
     if entry is None:
         return None
     username, expires = entry
-    if datetime.now(timezone.utc) > expires:
+    if now > expires:
         return None
     return username

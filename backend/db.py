@@ -85,6 +85,7 @@ CREATE INDEX IF NOT EXISTS idx_example_usage_extraction ON example_usage(used_in
 CREATE INDEX IF NOT EXISTS idx_example_usage_name ON example_usage(example_name);
 CREATE INDEX IF NOT EXISTS idx_api_usage_extraction ON api_usage(extraction_id);
 CREATE INDEX IF NOT EXISTS idx_api_usage_created ON api_usage(created_at);
+CREATE INDEX IF NOT EXISTS idx_ef_field_value ON extraction_fields(field_name, extracted_value);
 """
 
 

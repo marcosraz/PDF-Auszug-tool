@@ -45,7 +45,9 @@ export default function ExtractPage() {
     try {
       const data = await getProjects();
       setProjects(data);
-    } catch { /* ignore */ }
+    } catch {
+      toast.error("Projekte konnten nicht geladen werden");
+    }
   }, []);
 
   useEffect(() => {
@@ -283,11 +285,16 @@ export default function ExtractPage() {
         e.preventDefault();
         handleDownload();
       }
+      if (e.ctrlKey && e.key === "e" && files.length > 0 && !extracting) {
+        e.preventDefault();
+        handleExtract();
+      }
     };
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [result, editedData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, editedData, files, extracting]);
 
   return (
     <div className="h-full flex flex-col gap-4">
@@ -461,7 +468,13 @@ export default function ExtractPage() {
             >
               Neues PDF extrahieren
             </Button>
-            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+              <span>
+                <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">Ctrl</kbd>
+                +
+                <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">E</kbd>
+                {" "}Extrahieren
+              </span>
               <span>
                 <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">Ctrl</kbd>
                 +

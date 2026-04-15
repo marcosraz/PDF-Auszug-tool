@@ -30,6 +30,13 @@ MAX_EXAMPLES = int(os.environ.get("MAX_EXAMPLES", 50))
 # Job cleanup
 JOB_MAX_AGE_SECONDS = int(os.environ.get("JOB_MAX_AGE_SECONDS", 3600))  # 1 hour
 
+# Extra allowed CORS origins (comma-separated), added on top of the internal-network regex
+CORS_EXTRA_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("CORS_EXTRA_ORIGINS", "").split(",")
+    if o.strip()
+]
+
 # Ensure directories exist
 IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 EXAMPLES_DIR.mkdir(parents=True, exist_ok=True)

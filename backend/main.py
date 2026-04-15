@@ -65,8 +65,11 @@ _INTERNAL_ORIGIN_RE = re.compile(
 )
 
 
+from backend.config import CORS_EXTRA_ORIGINS
+
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=CORS_EXTRA_ORIGINS or [],
     allow_origin_regex=_INTERNAL_ORIGIN_RE.pattern,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -288,13 +291,29 @@ async def health():
         checks["disk"] = f"error: {e}"
 
     # Service account / API key configured
-    from backend.config import SERVICE_ACCOUNT_JSON, GEMINI_API_KEY
+    from backend.config import SERVICE_ACCOUNT_JSON, GEMINI_API_KEY, EXAMPLES_DIR
     if SERVICE_ACCOUNT_JSON and Path(SERVICE_ACCOUNT_JSON).exists():
         checks["gemini_auth"] = "service_account"
     elif GEMINI_API_KEY:
         checks["gemini_auth"] = "api_key"
     else:
         checks["gemini_auth"] = "not_configured"
+
+    # Examples availability
+    try:
+        example_count = sum(
+            1 for f in EXAMPLES_DIR.glob("*.json") if (EXAMPLES_DIR / f.stem).with_suffix(".png").exists()
+        )
+        checks["examples"] = example_count
+    except Exception as e:
+        checks["examples"] = f"error: {e}"
+
+    # Stored images count
+    try:
+        image_count = sum(1 for _ in IMAGES_DIR.glob("*.png"))
+        checks["stored_images"] = image_count
+    except Exception as e:
+        checks["stored_images"] = f"error: {e}"
 
     all_ok = all(
         v == "ok" or v in ("service_account", "api_key") or isinstance(v, (int, float))

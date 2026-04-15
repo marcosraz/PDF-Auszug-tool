@@ -81,44 +81,74 @@ export async function startBatch(files: File[]): Promise<BatchStartResponse> {
 }
 
 async function getSseToken(): Promise<string> {
-  const res = await authFetch(`${API_BASE}/auth/sse-token`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to get SSE token");
-  const data = await res.json();
-  return data.sse_token;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await authFetch(`${API_BASE}/auth/sse-token`, {
+      method: "POST",
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error("Failed to get SSE token");
+    const data = await res.json();
+    return data.sse_token;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
+
+const MAX_SSE_RECONNECTS = 3;
 
 export async function streamBatchProgress(
   jobId: string,
   onEvent: (data: Record<string, unknown>) => void,
   onDone: () => void
 ) {
-  // Use short-lived SSE token instead of passing JWT in query params
-  let sseToken: string;
-  try {
-    sseToken = await getSseToken();
-  } catch {
-    onDone();
-    return null;
+  let reconnectAttempts = 0;
+  let finished = false;
+
+  async function connect() {
+    // Use short-lived SSE token instead of passing JWT in query params
+    let sseToken: string;
+    try {
+      sseToken = await getSseToken();
+    } catch {
+      console.error("Failed to obtain SSE token for batch streaming");
+      onDone();
+      return null;
+    }
+
+    const url = `${API_BASE}/extract/stream/${jobId}?sse_token=${encodeURIComponent(sseToken)}`;
+    const es = new EventSource(url);
+
+    es.onmessage = (event) => {
+      reconnectAttempts = 0;
+      const data = JSON.parse(event.data);
+      onEvent(data);
+      if (data.type === "done") {
+        finished = true;
+        es.close();
+        onDone();
+      }
+    };
+
+    es.onerror = () => {
+      es.close();
+      if (finished) return;
+      if (reconnectAttempts < MAX_SSE_RECONNECTS) {
+        reconnectAttempts++;
+        const delay = Math.min(1000 * 2 ** reconnectAttempts, 8000);
+        console.warn(`SSE connection lost, reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${MAX_SSE_RECONNECTS})`);
+        setTimeout(() => { if (!finished) connect(); }, delay);
+      } else {
+        console.error("SSE reconnect limit reached, giving up");
+        onDone();
+      }
+    };
+
+    return es;
   }
 
-  const url = `${API_BASE}/extract/stream/${jobId}?sse_token=${encodeURIComponent(sseToken)}`;
-  const es = new EventSource(url);
-
-  es.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    onEvent(data);
-    if (data.type === "done") {
-      es.close();
-      onDone();
-    }
-  };
-
-  es.onerror = () => {
-    es.close();
-    onDone();
-  };
-
-  return es;
+  return connect();
 }
 
 export async function getExamples(project?: string): Promise<ExampleInfo[]> {

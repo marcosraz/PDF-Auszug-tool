@@ -36,6 +36,7 @@ import {
   Columns3,
   Download,
 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   getProjects,
   createProject,
@@ -216,7 +217,17 @@ export default function ProjectsPage() {
         </CardHeader>
         <CardContent>
           {loading ? (
-            <p className="text-muted-foreground text-sm">Laden...</p>
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <Skeleton className="h-4 w-4" />
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-20" />
+                </div>
+              ))}
+            </div>
           ) : projects.length === 0 ? (
             <p className="text-muted-foreground text-sm">
               Keine Projekte vorhanden. Erstelle ein neues Projekt.

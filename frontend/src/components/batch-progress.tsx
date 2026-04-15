@@ -16,10 +16,26 @@ interface BatchProgressProps {
   files: BatchFile[];
   completed: number;
   total: number;
+  startTime?: number;
 }
 
-export function BatchProgress({ files, completed, total }: BatchProgressProps) {
+function formatEta(seconds: number): string {
+  if (seconds < 60) return `~${Math.round(seconds)}s`;
+  const min = Math.floor(seconds / 60);
+  const sec = Math.round(seconds % 60);
+  return sec > 0 ? `~${min}m ${sec}s` : `~${min}m`;
+}
+
+export function BatchProgress({ files, completed, total, startTime }: BatchProgressProps) {
   const pct = total > 0 ? (completed / total) * 100 : 0;
+  const remaining = total - completed;
+
+  let eta: string | null = null;
+  if (startTime && completed > 0 && remaining > 0) {
+    const elapsed = (Date.now() - startTime) / 1000;
+    const avgPerItem = elapsed / completed;
+    eta = formatEta(avgPerItem * remaining);
+  }
 
   return (
     <div className="space-y-4">
@@ -28,7 +44,14 @@ export function BatchProgress({ files, completed, total }: BatchProgressProps) {
           <span className="font-medium">
             {completed} / {total} verarbeitet
           </span>
-          <span className="text-muted-foreground">{Math.round(pct)}%</span>
+          <div className="flex items-center gap-3">
+            {eta && (
+              <span className="text-muted-foreground text-xs">
+                Restzeit: {eta}
+              </span>
+            )}
+            <span className="text-muted-foreground">{Math.round(pct)}%</span>
+          </div>
         </div>
         <Progress value={pct} className="h-2" aria-label={`Fortschritt: ${Math.round(pct)}%`} />
       </div>

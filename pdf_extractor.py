@@ -205,19 +205,21 @@ def pdf_to_image(pdf_path: Path, output_dir: Path, dpi: int = 150) -> list[Path]
     import fitz
 
     doc = fitz.open(str(pdf_path))
-    images = []
-    zoom = dpi / 72
-    matrix = fitz.Matrix(zoom, zoom)
+    try:
+        images = []
+        zoom = dpi / 72
+        matrix = fitz.Matrix(zoom, zoom)
 
-    for page_num in range(len(doc)):
-        page = doc[page_num]
-        pix = page.get_pixmap(matrix=matrix)
-        output_path = output_dir / f"{pdf_path.stem}-{page_num + 1:02d}.png"
-        pix.save(str(output_path))
-        images.append(output_path)
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            pix = page.get_pixmap(matrix=matrix)
+            output_path = output_dir / f"{pdf_path.stem}-{page_num + 1:02d}.png"
+            pix.save(str(output_path))
+            images.append(output_path)
 
-    doc.close()
-    return images
+        return images
+    finally:
+        doc.close()
 
 
 def image_to_base64(image_path: Path, max_size: int = 1568) -> str:
@@ -252,7 +254,7 @@ def parse_json_response(text: str) -> dict:
     # Try parsing cleaned text
     try:
         return json.loads(text)
-    except:
+    except (json.JSONDecodeError, ValueError):
         pass
 
     # Fallback: find JSON object (supports nested braces for confidence format)
@@ -261,7 +263,7 @@ def parse_json_response(text: str) -> dict:
     if match:
         try:
             return json.loads(match.group())
-        except:
+        except (json.JSONDecodeError, ValueError):
             pass
 
     return {}
@@ -623,7 +625,7 @@ def create_excel(data_list: list[dict], output_path: Path, template_path: Option
             try:
                 if len(str(cell.value)) > max_length:
                     max_length = len(str(cell.value))
-            except:
+            except (TypeError, ValueError):
                 pass
         ws.column_dimensions[column_letter].width = min(max_length + 2, 50)
 

@@ -89,7 +89,7 @@ def extract_with_claude(image_base64: str) -> dict:
             data = json.loads(json_match.group())
             data["_duration"] = duration
             return data
-        except:
+        except (json.JSONDecodeError, ValueError):
             pass
     return {"_error": "JSON parse failed", "_raw": text[:200], "_duration": duration}
 
@@ -145,11 +145,11 @@ def extract_with_gemini(image_base64: str, model: str = "gemini-2.0-flash") -> d
         try:
             # Some models return text directly
             text = result["candidates"][0]["text"]
-        except:
+        except (KeyError, IndexError):
             try:
                 # Or in output field
                 text = result["candidates"][0]["output"]
-            except:
+            except (KeyError, IndexError):
                 return {"_error": f"Response parse error: {e}", "_raw": json.dumps(result)[:300], "_duration": duration}
 
     # Parse JSON - handle various formats
@@ -169,7 +169,7 @@ def extract_with_gemini(image_base64: str, model: str = "gemini-2.0-flash") -> d
         data = json.loads(text)
         data["_duration"] = duration
         return data
-    except:
+    except (json.JSONDecodeError, ValueError):
         pass
 
     # Fallback: find any JSON object in text
@@ -179,7 +179,7 @@ def extract_with_gemini(image_base64: str, model: str = "gemini-2.0-flash") -> d
             data = json.loads(json_match.group())
             data["_duration"] = duration
             return data
-        except:
+        except (json.JSONDecodeError, ValueError):
             pass
 
     return {"_error": "JSON parse failed", "_raw": text[:300], "_duration": duration}

@@ -107,7 +107,8 @@ async def run_batch(job_id: str, pdf_paths: list[Path]):
         logger.error("Batch job %s not found", job_id)
         return
 
-    job.status = "running"
+    with _lock:
+        job.status = "running"
 
     for pdf_path in pdf_paths:
         # Check if job was deleted mid-processing
@@ -131,8 +132,11 @@ async def run_batch(job_id: str, pdf_paths: list[Path]):
                 confidence=confidence_scores,
                 created_at=datetime.now(),
             )
-            job.results.append(result)
-            job.completed += 1
+            with _lock:
+                job.results.append(result)
+                job.completed += 1
+                completed = job.completed
+                total = job.total
 
             # Log to analytics DB so batch results are persisted
             try:
@@ -153,20 +157,24 @@ async def run_batch(job_id: str, pdf_paths: list[Path]):
 
             await queue.put({
                 "type": "progress",
-                "completed": job.completed,
-                "total": job.total,
+                "completed": completed,
+                "total": total,
                 "latest": result.model_dump(mode="json"),
             })
 
         except Exception as e:
-            job.completed += 1
+            with _lock:
+                job.completed += 1
+                completed = job.completed
+                total = job.total
             await queue.put({
                 "type": "error",
                 "filename": pdf_path.name,
                 "error": str(e),
-                "completed": job.completed,
-                "total": job.total,
+                "completed": completed,
+                "total": total,
             })
 
-    job.status = "completed"
+    with _lock:
+        job.status = "completed"
     await queue.put({"type": "done", "status": "completed"})
